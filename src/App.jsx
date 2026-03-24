@@ -1,4 +1,4 @@
-// Complete App.js - Fixed Version with Carousel
+// Complete App.js - Fixed Version with Carousel & Download Button
 import React, { useState, useCallback, useEffect } from "react";
 import axios from "axios";
 import { useDropzone } from "react-dropzone";
@@ -45,7 +45,12 @@ import {
   GitBranch,
   Network,
   Fingerprint,
-  Radar
+  Radar,
+  Download,
+  Info,
+  TrendingDown,
+  Minus,
+  Plus
 } from "lucide-react";
 
 const API_BASE_URL = "https://automl-backend-hw8s.onrender.com";
@@ -59,6 +64,8 @@ function App() {
   const [datasetPreview, setDatasetPreview] = useState(null);
   const [target, setTarget] = useState("");
   const [targetPreview, setTargetPreview] = useState([]);
+  const [targetStats, setTargetStats] = useState(null);
+  const [targetDistribution, setTargetDistribution] = useState(null);
   const [features, setFeatures] = useState([]);
   const [inputData, setInputData] = useState({});
   const [prediction, setPrediction] = useState(null);
@@ -80,6 +87,7 @@ function App() {
   const [hoveredModel, setHoveredModel] = useState(null);
   const [currentCarouselIndex, setCurrentCarouselIndex] = useState(0);
   const [particles, setParticles] = useState([]);
+  const [downloading, setDownloading] = useState(false);
 
   // Generate particles for training animation
   useEffect(() => {
@@ -168,9 +176,38 @@ function App() {
         target: selectedTarget,
         dataset_id: datasetId  
       });
-      setTargetPreview(res.data.preview || []);
+      const previewData = res.data.preview || [];
+      setTargetPreview(previewData);
+      
+      // Calculate target statistics
+      const numericValues = previewData.filter(v => !isNaN(parseFloat(v)) && isFinite(v)).map(v => parseFloat(v));
+      if (numericValues.length > 0) {
+        const min = Math.min(...numericValues);
+        const max = Math.max(...numericValues);
+        const mean = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
+        const sorted = [...numericValues].sort((a, b) => a - b);
+        const median = sorted[Math.floor(sorted.length / 2)];
+        const range = max - min;
+        
+        // Calculate distribution (simple histogram)
+        const numBins = 5;
+        const binWidth = range / numBins;
+        const bins = Array(numBins).fill(0);
+        numericValues.forEach(val => {
+          const binIndex = Math.min(Math.floor((val - min) / binWidth), numBins - 1);
+          bins[binIndex]++;
+        });
+        
+        setTargetStats({ min, max, mean, median, range });
+        setTargetDistribution({ bins, binWidth, min });
+      } else {
+        setTargetStats(null);
+        setTargetDistribution(null);
+      }
     } catch (err) {
       console.error("Preview error:", err);
+      setTargetStats(null);
+      setTargetDistribution(null);
     }
   };
 
@@ -259,6 +296,40 @@ function App() {
     }
   };
 
+  const downloadModel = async () => {
+    if (!modelId) {
+      alert("Model not available! Please train a model first.");
+      return;
+    }
+
+    try {
+      setDownloading(true);
+      const response = await axios.get(
+        `${API_BASE_URL}/download-model/${modelId}`,
+        {
+          responseType: "blob",
+        }
+      );
+
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `${bestModel || modelId}_model.zip`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      setDownloading(false);
+      alert("Model downloaded successfully!");
+    } catch (error) {
+      console.error("Download error:", error);
+      setDownloading(false);
+      alert("Download failed: " + (error.response?.data?.message || error.message));
+    }
+  };
+
   const resetToHome = () => {
     setCurrentStep(0);
     setFile(null);
@@ -266,6 +337,8 @@ function App() {
     setDatasetPreview(null);
     setTarget("");
     setTargetPreview([]);
+    setTargetStats(null);
+    setTargetDistribution(null);
     setFeatures([]);
     setInputData({});
     setPrediction(null);
@@ -280,6 +353,7 @@ function App() {
     setIsTraining(false);
     setRecommendation("");
     setActiveTab("models");
+    setModelId("");
   };
 
   const goToNext = () => {
@@ -558,70 +632,142 @@ function App() {
     </div>
   );
 
-  // Page 2: Target Selection
-  const renderStep1 = () => (
-    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
-      <div className="max-w-7xl mx-auto px-4 py-12">
-        <div className="mb-8 flex items-center justify-between">
-          <button
-            onClick={goBack}
-            className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-5 py-2.5 rounded-lg hover:border-amber-500 hover:bg-gray-800/50"
-          >
-            <ChevronRight className="w-4 h-4 rotate-180" />
-            <span className="text-sm">BACK</span>
-          </button>
-          <button
-            onClick={resetToHome}
-            className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-5 py-2.5 rounded-lg hover:border-amber-500 hover:bg-gray-800/50"
-          >
-            <Home className="w-4 h-4" />
-            <span className="text-sm">HOME</span>
-          </button>
-        </div>
+  // Page 2: Enhanced Target Selection with Stats and Distribution
+  // Page 2: Modern Target Selection with Clean UI
+const renderStep1 = () => (
+  <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
+    <div className="max-w-7xl mx-auto px-4 py-8 md:py-12">
+      <div className="mb-6 md:mb-8 flex items-center justify-between">
+        <button
+          onClick={goBack}
+          className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-4 md:px-5 py-2 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm"
+        >
+          <ChevronRight className="w-4 h-4 rotate-180" />
+          <span>BACK</span>
+        </button>
+        <button
+          onClick={resetToHome}
+          className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-4 md:px-5 py-2 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm"
+        >
+          <Home className="w-4 h-4" />
+          <span>HOME</span>
+        </button>
+      </div>
 
-        <div className="text-center mb-12">
-          <h2 className="text-6xl md:text-7xl font-black text-white tracking-tighter mb-4">
-            SELECT <span className="bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">TARGET</span>
-          </h2>
-          <p className="text-gray-500 text-lg">Choose what you want to predict</p>
-        </div>
+      <div className="text-center mb-10 md:mb-12">
+        <h2 className="text-4xl md:text-6xl font-black text-white tracking-tighter mb-3">
+          SELECT <span className="bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">TARGET</span>
+        </h2>
+        <p className="text-gray-500 text-base">Choose the column you want to predict</p>
+      </div>
 
-        <div className="grid lg:grid-cols-2 gap-8">
-          <div className="space-y-6">
-            <div className="border border-gray-700 p-6 rounded-2xl bg-gray-900/30 backdrop-blur-sm">
-              <label className="block text-sm font-mono text-amber-500 mb-3">
-                TARGET COLUMN
-              </label>
-              <select
-                value={target}
-                onChange={(e) => {
-                  const selected = e.target.value;
-                  setTarget(selected);
-                  if (selected && datasetId) {
-                    fetchTargetPreview(selected);
-                  }
-                }}
-                className="w-full p-3 bg-black border border-gray-700 focus:border-amber-500 outline-none text-white font-mono rounded-lg transition-all duration-300"
-              >
-                <option value="">Select target column...</option>
-                {columns.map((col, i) => (
-                  <option key={i} value={col}>{col}</option>
-                ))}
-              </select>
-
-              {target && (
-                <div className="mt-6 p-4 border-l-4 border-amber-500 bg-gradient-to-r from-amber-500/10 to-transparent rounded-r-lg">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Target className="w-4 h-4 text-amber-500" />
-                    <p className="text-sm font-mono text-gray-400">SELECTED TARGET</p>
-                  </div>
-                  <p className="text-lg font-mono text-white">{target}</p>
-                </div>
-              )}
+      <div className="grid lg:grid-cols-2 gap-8">
+        {/* Left Column - Target Selection Card */}
+        <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
+          <div className="border-b border-gray-800 p-5 bg-gray-900/50">
+            <div className="flex items-center gap-2">
+              <Target className="w-5 h-5 text-amber-500" />
+              <h3 className="font-mono text-white text-sm tracking-wider">TARGET COLUMN</h3>
             </div>
+          </div>
+          
+          <div className="p-6 space-y-6">
+            <select
+              value={target}
+              onChange={(e) => {
+                const selected = e.target.value;
+                setTarget(selected);
+                if (selected && datasetId) {
+                  fetchTargetPreview(selected);
+                }
+              }}
+              className="w-full p-4 bg-black/50 border border-gray-700 focus:border-amber-500 outline-none text-white font-mono rounded-xl transition-all duration-300 text-base"
+            >
+              <option value="">Select target column...</option>
+              {columns.map((col, i) => (
+                <option key={i} value={col}>{col}</option>
+              ))}
+            </select>
+
+            {target && targetStats && (
+              <div className="space-y-5">
+                {/* Selected Target Badge */}
+                <div className="bg-gradient-to-r from-amber-500/10 to-transparent p-4 rounded-xl border-l-4 border-amber-500">
+                  <p className="text-xs text-gray-500 mb-1">SELECTED TARGET</p>
+                  <p className="text-2xl font-mono font-bold text-white">{target}</p>
+                </div>
+
+                {/* Statistics Grid - Clean Cards */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
+                    <p className="text-xs text-gray-500 mb-1">MINIMUM</p>
+                    <p className="text-2xl font-bold text-white">{targetStats.min.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
+                    <p className="text-xs text-gray-500 mb-1">MAXIMUM</p>
+                    <p className="text-2xl font-bold text-white">{targetStats.max.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
+                    <p className="text-xs text-gray-500 mb-1">MEAN (AVERAGE)</p>
+                    <p className="text-2xl font-bold text-amber-500">{targetStats.mean.toFixed(2)}</p>
+                  </div>
+                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
+                    <p className="text-xs text-gray-500 mb-1">MEDIAN</p>
+                    <p className="text-2xl font-bold text-amber-500">{targetStats.median.toFixed(2)}</p>
+                  </div>
+                </div>
+
+                {/* Range Card */}
+                <div className="bg-black/30 rounded-xl p-5 border border-gray-800">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-sm font-mono text-gray-400">DATA RANGE</p>
+                    <p className="text-xl font-bold text-white">{targetStats.range.toFixed(2)}</p>
+                  </div>
+                  <div className="relative h-2 bg-gray-800 rounded-full overflow-hidden">
+                    <div 
+                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-full"
+                      style={{ width: '100%' }}
+                    />
+                    <div 
+                      className="absolute inset-y-0 bg-white rounded-full shadow-lg"
+                      style={{ left: `${((targetStats.mean - targetStats.min) / targetStats.range) * 100}%`, width: '3px' }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-xs text-gray-600 mt-2">
+                    <span>{targetStats.min.toFixed(0)}</span>
+                    <span className="text-amber-500">Mean: {targetStats.mean.toFixed(0)}</span>
+                    <span>{targetStats.max.toFixed(0)}</span>
+                  </div>
+                </div>
+
+                {/* Insights Card */}
+                <div className="bg-gradient-to-r from-amber-500/5 to-transparent rounded-xl p-5 border border-amber-500/20">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Lightbulb className="w-4 h-4 text-amber-500" />
+                    <p className="text-xs font-mono text-amber-500 uppercase tracking-wider">Key Insights</p>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <p className="text-gray-300">
+                      <span className="text-amber-500">•</span> Range: <span className="text-white font-mono">{targetStats.range.toFixed(2)}</span> units spread
+                    </p>
+                    <p className="text-gray-300">
+                      <span className="text-amber-500">•</span> Mean vs Median: <span className="text-white font-mono">{Math.abs(targetStats.mean - targetStats.median).toFixed(2)}</span> difference
+                    </p>
+                    <p className="text-gray-300">
+                      <span className="text-amber-500">•</span> Distribution: <span className="text-white">
+                        {targetStats.range / targetStats.mean * 100 > 50 ? 'High variability' : 'Moderate variability'}
+                      </span>
+                    </p>
+                    <p className="text-gray-300">
+                      <span className="text-amber-500">•</span> Data points: <span className="text-white font-mono">{targetPreview.length}</span> samples
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {trainError && (
-              <div className="border border-red-500/30 p-4 bg-red-500/10 rounded-lg">
+              <div className="border border-red-500/30 p-4 bg-red-500/10 rounded-xl">
                 <p className="text-red-400 text-sm">Error: {trainError}</p>
               </div>
             )}
@@ -630,7 +776,7 @@ function App() {
               <button
                 onClick={trainModel}
                 disabled={isTraining}
-                className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider hover:shadow-2xl hover:shadow-amber-500/30 transition-all duration-300 disabled:opacity-50 rounded-lg transform hover:scale-[1.02]"
+                className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider hover:shadow-2xl hover:shadow-amber-500/30 transition-all duration-300 disabled:opacity-50 rounded-xl transform hover:scale-[1.02] text-base"
               >
                 {isTraining ? (
                   <div className="flex items-center justify-center gap-2">
@@ -646,49 +792,93 @@ function App() {
               </button>
             )}
           </div>
+        </div>
 
-          <div className="border border-gray-700 rounded-2xl overflow-hidden bg-gray-900/30 backdrop-blur-sm">
-            <div className="border-b border-gray-700 p-4 bg-gray-900/50">
-              <h3 className="font-mono text-white flex items-center gap-2 text-sm">
-                <Eye className="w-4 h-4 text-amber-500" />
-                TARGET PREVIEW
-              </h3>
+        {/* Right Column - Data Preview Card */}
+        <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
+          <div className="border-b border-gray-800 p-5 bg-gray-900/50">
+            <div className="flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-amber-500" />
+              <h3 className="font-mono text-white text-sm tracking-wider">DATA PREVIEW</h3>
             </div>
-            <div className="p-4 max-h-[500px] overflow-y-auto">
-              {target ? (
-                targetPreview.length > 0 ? (
-                  <div className="space-y-2">
+          </div>
+          
+          <div className="p-6">
+            {target ? (
+              <div className="space-y-6">
+                {/* Distribution Chart - Clean Bars */}
+                {targetDistribution && (
+                  <div>
+                    <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Distribution Analysis</p>
+                    <div className="space-y-3">
+                      {targetDistribution.bins.map((count, idx) => {
+                        const binStart = targetDistribution.min + idx * targetDistribution.binWidth;
+                        const binEnd = binStart + targetDistribution.binWidth;
+                        const maxCount = Math.max(...targetDistribution.bins);
+                        const percentage = (count / maxCount) * 100;
+                        return (
+                          <div key={idx} className="group">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-xs text-gray-500 font-mono">
+                                {binStart.toFixed(1)} - {binEnd.toFixed(1)}
+                              </span>
+                              <span className="text-xs text-amber-500 font-mono">{count} samples</span>
+                            </div>
+                            <div className="h-10 bg-gray-800 rounded-lg overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-lg transition-all duration-500 flex items-center justify-end px-3"
+                                style={{ width: `${percentage}%` }}
+                              >
+                                <span className="text-xs text-white font-bold">{percentage.toFixed(0)}%</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Sample Values Grid - Clean Layout */}
+                <div>
+                  <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Sample Values</p>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {targetPreview.slice(0, 12).map((value, idx) => (
                       <div 
                         key={idx} 
-                        className="border-b border-gray-700 py-2 text-gray-400 font-mono text-sm hover:text-amber-500 transition-all duration-300 hover:translate-x-1"
+                        className="bg-black/30 rounded-lg p-3 text-center border border-gray-800 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all duration-300 group"
                       >
-                        {String(value)}
+                        <span className="text-gray-400 text-xs group-hover:text-amber-500 transition">#{idx + 1}</span>
+                        <p className="text-white font-mono text-base font-bold mt-1">{String(value)}</p>
                       </div>
                     ))}
                   </div>
-                ) : (
-                  <div className="text-center py-12">
-                    <RefreshCw className="w-8 h-8 mx-auto mb-2 text-gray-700 animate-spin" />
-                    <p className="text-gray-600">Loading preview...</p>
-                  </div>
-                )
-              ) : (
-                <div className="text-center py-16">
-                  <Target className="w-12 h-12 mx-auto mb-3 text-gray-700" />
-                  <p className="text-gray-500">Choose a target column first</p>
+                  {targetPreview.length > 12 && (
+                    <p className="text-xs text-gray-600 text-center mt-4 pt-2 border-t border-gray-800">
+                      + {targetPreview.length - 12} more values
+                    </p>
+                  )}
                 </div>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="text-center py-16">
+                <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-800/50 flex items-center justify-center">
+                  <Target className="w-10 h-10 text-gray-600" />
+                </div>
+                <p className="text-gray-500 text-base">No target selected</p>
+                <p className="text-gray-600 text-sm mt-2">Choose a target column to see statistics</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
-
-      {trainingAnimation && <TrainingAnimation />}
     </div>
-  );
 
-  // Page 3: Results Page with Carousel
+    {trainingAnimation && <TrainingAnimation />}
+  </div>
+);
+
+  // Page 3: Results Page with Carousel and Download Button
   const renderStep2 = () => {
     // Show loading if leaderboard is empty
     if (!leaderboard || leaderboard.length === 0) {
@@ -940,6 +1130,28 @@ function App() {
                 </>
               )}
 
+              {/* Download Button */}
+              <div className="flex justify-center mt-8">
+                <button
+                  onClick={downloadModel}
+                  disabled={!modelId || downloading}
+                  className="group px-8 py-4 bg-gradient-to-r from-green-500 to-emerald-600 text-white font-bold rounded-xl hover:shadow-2xl hover:shadow-green-500/30 transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed transform hover:scale-105 flex items-center gap-3"
+                >
+                  {downloading ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>DOWNLOADING...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Download className="w-5 h-5" />
+                      <span>DOWNLOAD BEST MODEL</span>
+                      <Sparkles className="w-4 h-4" />
+                    </>
+                  )}
+                </button>
+              </div>
+
               {/* Best Model Parameters */}
               {bestModel && Object.keys(bestParams).length > 0 && (
                 <div className="mt-8 max-w-2xl mx-auto">
@@ -972,343 +1184,289 @@ function App() {
             </div>
           )}
 
-          {/* Predict Tab */}
-          // Enhanced Predict Tab with ML Theme and Interactivity
-{activeTab === "predict" && (
-  <div className="grid lg:grid-cols-2 gap-8">
-    {/* Left Side - Feature Input with Visualizations */}
-    <div className="space-y-6">
-      {/* Feature Input Card with Neural Network Background */}
-      <div className="relative overflow-hidden border border-gray-700 rounded-2xl bg-gradient-to-br from-gray-900/50 to-black backdrop-blur-sm">
-        {/* Animated Neural Network Background */}
-        <div className="absolute inset-0 opacity-10">
-          <svg className="w-full h-full" viewBox="0 0 1000 600">
-            {[...Array(20)].map((_, i) => (
-              <circle
-                key={`circle-${i}`}
-                cx={Math.random() * 1000}
-                cy={Math.random() * 600}
-                r="2"
-                fill="#f59e0b"
-                className="animate-pulse"
-              />
-            ))}
-            {[...Array(30)].map((_, i) => (
-              <line
-                key={`line-${i}`}
-                x1={Math.random() * 1000}
-                y1={Math.random() * 600}
-                x2={Math.random() * 1000}
-                y2={Math.random() * 600}
-                stroke="#f59e0b"
-                strokeWidth="0.5"
-                className="animate-pulse"
-              />
-            ))}
-          </svg>
-        </div>
-        
-        <div className="relative p-6">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center animate-pulse">
-              <Brain className="w-5 h-5 text-black" />
-            </div>
-            <div>
-              <h3 className="font-mono text-white text-lg tracking-wider">FEATURE ENGINEERING</h3>
-              <p className="text-xs text-gray-500">Adjust values to see real-time predictions</p>
-            </div>
-          </div>
-          
-          <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2 custom-scroll">
-            {features.map((col, idx) => {
-              const currentValue = inputData[col] || 0;
-              const normalizedValue = Math.min(Math.max(currentValue / 100, 0), 1);
-              
-              return (
-                <div key={idx} className="group relative">
-                  <div className="flex items-center justify-between mb-2">
-                    <label className="text-xs font-mono text-gray-400 group-hover:text-amber-500 transition-all duration-300 flex items-center gap-2">
-                      <span className="w-1 h-1 rounded-full bg-amber-500"></span>
-                      {col.toUpperCase()}
-                    </label>
-                    <span className="text-xs font-mono text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                      {currentValue.toFixed(2)}
-                    </span>
-                  </div>
-                  
-                  <div className="relative">
-                    <input
-                      type="range"
-                      min="-10"
-                      max="100"
-                      step="0.1"
-                      value={currentValue}
-                      onChange={(e) => handleInputChange(col, e.target.value)}
-                      className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-slider"
-                      style={{
-                        background: `linear-gradient(to right, #f59e0b 0%, #f59e0b ${normalizedValue * 100}%, #374151 ${normalizedValue * 100}%, #374151 100%)`
-                      }}
-                    />
-                    <div className="absolute -bottom-4 left-0 right-0 flex justify-between text-[10px] text-gray-600">
-                      <span>Min</span>
-                      <span>Optimal</span>
-                      <span>Max</span>
+          {/* Predict Tab - Fixed Box Layout */}
+          {activeTab === "predict" && (
+            <div className="grid lg:grid-cols-2 gap-8">
+              {/* Left Side - Feature Input */}
+              <div className="space-y-6">
+                <div className="relative overflow-hidden border border-gray-700 rounded-2xl bg-gradient-to-br from-gray-900/50 to-black backdrop-blur-sm">
+                  <div className="relative p-6">
+                    <div className="flex items-center gap-3 mb-6">
+                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center animate-pulse">
+                        <Brain className="w-5 h-5 text-black" />
+                      </div>
+                      <div>
+                        <h3 className="font-mono text-white text-lg tracking-wider">FEATURE ENGINEERING</h3>
+                        <p className="text-xs text-gray-500">Adjust values to see real-time predictions</p>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2 custom-scroll">
+                      {features.map((col, idx) => {
+                        const currentValue = inputData[col] || 0;
+                        const normalizedValue = Math.min(Math.max(currentValue / 100, 0), 1);
+                        
+                        return (
+                          <div key={idx} className="group relative">
+                            <div className="flex items-center justify-between mb-2">
+                              <label className="text-xs font-mono text-gray-400 group-hover:text-amber-500 transition-all duration-300 flex items-center gap-2">
+                                <span className="w-1 h-1 rounded-full bg-amber-500"></span>
+                                {col.toUpperCase()}
+                              </label>
+                              <span className="text-xs font-mono text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                                {currentValue.toFixed(2)}
+                              </span>
+                            </div>
+                            
+                            <div className="relative">
+                              <input
+                                type="range"
+                                min="-10"
+                                max="100"
+                                step="0.1"
+                                value={currentValue}
+                                onChange={(e) => handleInputChange(col, e.target.value)}
+                                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-slider"
+                                style={{
+                                  background: `linear-gradient(to right, #f59e0b 0%, #f59e0b ${normalizedValue * 100}%, #374151 ${normalizedValue * 100}%, #374151 100%)`
+                                }}
+                              />
+                              <div className="absolute -bottom-4 left-0 right-0 flex justify-between text-[10px] text-gray-600">
+                                <span>Min</span>
+                                <span>Optimal</span>
+                                <span>Max</span>
+                              </div>
+                            </div>
+                            
+                            <div className="mt-3 flex gap-2">
+                              <button
+                                onClick={() => handleInputChange(col, Math.max(-10, currentValue - 5))}
+                                className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
+                              >
+                                -5
+                              </button>
+                              <button
+                                onClick={() => handleInputChange(col, currentValue + 5)}
+                                className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
+                              >
+                                +5
+                              </button>
+                              <button
+                                onClick={() => handleInputChange(col, 0)}
+                                className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
+                              >
+                                Reset
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
+                </div>
+                
+                <button
+                  onClick={predict}
+                  disabled={loading || Object.keys(inputData).length !== features.length}
+                  className="relative w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider overflow-hidden group rounded-2xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity duration-300" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
                   
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      onClick={() => handleInputChange(col, Math.max(-10, currentValue - 5))}
-                      className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
-                    >
-                      -5
-                    </button>
-                    <button
-                      onClick={() => handleInputChange(col, currentValue + 5)}
-                      className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
-                    >
-                      +5
-                    </button>
-                    <button
-                      onClick={() => handleInputChange(col, 0)}
-                      className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
-                    >
-                      Reset
-                    </button>
+                  {loading ? (
+                    <div className="flex items-center justify-center gap-2 relative z-10">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>ANALYZING PATTERNS...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2 relative z-10">
+                      <Zap className="w-5 h-5" />
+                      <span>EXECUTE PREDICTION</span>
+                      <Sparkles className="w-4 h-4" />
+                    </div>
+                  )}
+                </button>
+                
+                {Object.keys(inputData).length > 0 && (
+                  <div className="border border-gray-700 rounded-2xl p-4 bg-gray-900/30">
+                    <div className="flex items-center gap-2 mb-3">
+                      <BarChart3 className="w-4 h-4 text-amber-500" />
+                      <h4 className="text-xs font-mono text-gray-400">INPUT SUMMARY</h4>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="border border-gray-700 rounded-lg p-2">
+                        <p className="text-xs text-gray-500">Features</p>
+                        <p className="text-lg font-bold text-white">{Object.keys(inputData).length}</p>
+                      </div>
+                      <div className="border border-gray-700 rounded-lg p-2">
+                        <p className="text-xs text-gray-500">Avg Value</p>
+                        <p className="text-lg font-bold text-amber-500">
+                          {(Object.values(inputData).reduce((a, b) => a + b, 0) / Object.keys(inputData).length).toFixed(1)}
+                        </p>
+                      </div>
+                      <div className="border border-gray-700 rounded-lg p-2">
+                        <p className="text-xs text-gray-500">Range</p>
+                        <p className="text-lg font-bold text-white">
+                          {Math.min(...Object.values(inputData)).toFixed(0)} - {Math.max(...Object.values(inputData)).toFixed(0)}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-      
-      {/* Prediction Button with Animation */}
-      <button
-        onClick={predict}
-        disabled={loading || Object.keys(inputData).length !== features.length}
-        className="relative w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider overflow-hidden group rounded-2xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
-      >
-        <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity duration-300" />
-        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-        
-        {loading ? (
-          <div className="flex items-center justify-center gap-2 relative z-10">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span>ANALYZING PATTERNS...</span>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center gap-2 relative z-10">
-            <Zap className="w-5 h-5" />
-            <span>EXECUTE PREDICTION</span>
-            <Sparkles className="w-4 h-4" />
-          </div>
-        )}
-      </button>
-      
-      {/* Feature Statistics */}
-      {Object.keys(inputData).length > 0 && (
-        <div className="border border-gray-700 rounded-2xl p-4 bg-gray-900/30">
-          <div className="flex items-center gap-2 mb-3">
-            <BarChart3 className="w-4 h-4 text-amber-500" />
-            <h4 className="text-xs font-mono text-gray-400">INPUT SUMMARY</h4>
-          </div>
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div className="border border-gray-700 rounded-lg p-2">
-              <p className="text-xs text-gray-500">Features</p>
-              <p className="text-lg font-bold text-white">{Object.keys(inputData).length}</p>
-            </div>
-            <div className="border border-gray-700 rounded-lg p-2">
-              <p className="text-xs text-gray-500">Avg Value</p>
-              <p className="text-lg font-bold text-amber-500">
-                {(Object.values(inputData).reduce((a, b) => a + b, 0) / Object.keys(inputData).length).toFixed(1)}
-              </p>
-            </div>
-            <div className="border border-gray-700 rounded-lg p-2">
-              <p className="text-xs text-gray-500">Range</p>
-              <p className="text-lg font-bold text-white">
-                {Math.min(...Object.values(inputData)).toFixed(0)} - {Math.max(...Object.values(inputData)).toFixed(0)}
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-    
-    {/* Right Side - Prediction Result with ML Visualizations */}
-    <div>
-      {prediction ? (
-        <div className="relative h-full">
-          {/* Animated Background */}
-          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 via-transparent to-purple-500/20 rounded-2xl blur-xl animate-pulse" />
-          
-          <div className="relative border border-amber-500 rounded-2xl bg-gradient-to-br from-gray-900 to-black p-8 h-full flex flex-col items-center justify-center overflow-hidden">
-            {/* Floating Particles */}
-            <div className="absolute inset-0 pointer-events-none">
-              {[...Array(20)].map((_, i) => (
-                <div
-                  key={i}
-                  className="absolute rounded-full bg-amber-500/20 animate-float"
-                  style={{
-                    left: `${Math.random() * 100}%`,
-                    top: `${Math.random() * 100}%`,
-                    width: `${Math.random() * 4 + 2}px`,
-                    height: `${Math.random() * 4 + 2}px`,
-                    animationDelay: `${Math.random() * 5}s`,
-                    animationDuration: `${Math.random() * 3 + 2}s`
-                  }}
-                />
-              ))}
-            </div>
-            
-            {/* Success Icon with Ripple Effect */}
-            <div className="relative mb-6">
-              <div className="absolute inset-0 rounded-full bg-amber-500/30 animate-ping" />
-              <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-pulse" />
-              <div className="relative w-20 h-20 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center shadow-2xl">
-                <CheckCircle className="w-10 h-10 text-black" />
+                )}
               </div>
-            </div>
-            
-            <h3 className="text-sm text-gray-500 uppercase tracking-wider mb-2 font-mono">
-              PREDICTION RESULT
-            </h3>
-            
-            {/* Main Prediction Value */}
-            <p className="text-6xl md:text-7xl font-black bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 bg-clip-text text-transparent mb-4">
-              {typeof prediction.prediction === 'number' ? prediction.prediction.toFixed(2) : prediction.prediction}
-            </p>
-            
-            {/* Confidence Score */}
-            {prediction.confidence && (
-              <div className="mb-6 text-center">
-                <p className="text-xs text-gray-500 mb-1">Confidence Score</p>
-                <div className="flex items-center gap-3">
-                  <span className="text-2xl font-bold text-white">{(prediction.confidence * 100).toFixed(1)}%</span>
-                  <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                    <div 
-                      className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-1000"
-                      style={{ width: `${prediction.confidence * 100}%` }}
-                    />
+              
+              {/* Right Side - Prediction Result - FIXED INSIDE BOX */}
+              <div className="relative">
+                {prediction ? (
+                  <div className="relative h-full min-h-[500px]">
+                    {/* Animated Background */}
+                    <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 via-transparent to-purple-500/20 rounded-2xl blur-xl animate-pulse" />
+                    
+                    <div className="relative border border-amber-500 rounded-2xl bg-gradient-to-br from-gray-900 to-black p-8 h-full flex flex-col items-center justify-center overflow-hidden">
+                      {/* Floating Particles */}
+                      <div className="absolute inset-0 pointer-events-none">
+                        {[...Array(20)].map((_, i) => (
+                          <div
+                            key={i}
+                            className="absolute rounded-full bg-amber-500/20 animate-float"
+                            style={{
+                              left: `${Math.random() * 100}%`,
+                              top: `${Math.random() * 100}%`,
+                              width: `${Math.random() * 4 + 2}px`,
+                              height: `${Math.random() * 4 + 2}px`,
+                              animationDelay: `${Math.random() * 5}s`,
+                              animationDuration: `${Math.random() * 3 + 2}s`
+                            }}
+                          />
+                        ))}
+                      </div>
+                      
+                      {/* Success Icon with Ripple Effect */}
+                      <div className="relative mb-6">
+                        <div className="absolute inset-0 rounded-full bg-amber-500/30 animate-ping" />
+                        <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-pulse" />
+                        <div className="relative w-20 h-20 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center shadow-2xl">
+                          <CheckCircle className="w-10 h-10 text-black" />
+                        </div>
+                      </div>
+                      
+                      <h3 className="text-sm text-gray-500 uppercase tracking-wider mb-2 font-mono">
+                        PREDICTION RESULT
+                      </h3>
+                      
+                      {/* Main Prediction Value */}
+                      <p className="text-6xl md:text-7xl font-black bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 bg-clip-text text-transparent mb-4">
+                        {typeof prediction.prediction === 'number' ? prediction.prediction.toFixed(2) : prediction.prediction}
+                      </p>
+                      
+                      {/* Confidence Score */}
+                      {prediction.confidence && (
+                        <div className="mb-6 text-center w-full">
+                          <p className="text-xs text-gray-500 mb-1">Confidence Score</p>
+                          <div className="flex items-center gap-3">
+                            <span className="text-2xl font-bold text-white">{(prediction.confidence * 100).toFixed(1)}%</span>
+                            <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
+                              <div 
+                                className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-1000"
+                                style={{ width: `${prediction.confidence * 100}%` }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Model Information */}
+                      <div className="w-full border-t border-gray-700 pt-4 mt-2">
+                        <div className="flex items-center justify-between text-sm">
+                          <div className="flex items-center gap-2">
+                            <Cpu className="w-4 h-4 text-amber-500" />
+                            <span className="text-gray-500">Model:</span>
+                            <span className="text-white font-mono text-xs">{bestModel}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Activity className="w-4 h-4 text-green-500" />
+                            <span className="text-gray-500">Status:</span>
+                            <span className="text-green-500">Active</span>
+                          </div>
+                        </div>
+                      </div>
+                      
+                      {/* Additional Insights */}
+                      <div className="w-full mt-4 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
+                        <div className="flex items-start gap-2">
+                          <Lightbulb className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
+                          <p className="text-xs text-gray-400">
+                            {typeof prediction.prediction === 'number' 
+                              ? `This prediction is based on ${features.length} input features with ${bestModel} algorithm.`
+                              : `Based on the input values, the model predicts "${prediction.prediction}" with high confidence.`}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="border border-gray-700 rounded-2xl h-full min-h-[500px] flex flex-col items-center justify-center bg-gradient-to-br from-gray-900/30 to-black p-8">
+                    {/* Animated Neural Network Visualization */}
+                    <div className="relative w-48 h-48 mb-6">
+                      <svg viewBox="0 0 200 200" className="w-full h-full">
+                        <circle cx="100" cy="100" r="90" fill="none" stroke="#f59e0b" strokeWidth="1" strokeDasharray="5 5" className="animate-spin-slow" />
+                        <circle cx="100" cy="100" r="60" fill="none" stroke="#f59e0b" strokeWidth="1" opacity="0.5" />
+                        <circle cx="100" cy="100" r="30" fill="none" stroke="#f59e0b" strokeWidth="1" opacity="0.3" />
+                        {[0, 45, 90, 135, 180, 225, 270, 315].map((angle, i) => {
+                          const rad = (angle * Math.PI) / 180;
+                          const x = 100 + 75 * Math.cos(rad);
+                          const y = 100 + 75 * Math.sin(rad);
+                          return (
+                            <circle key={i} cx={x} cy={y} r="4" fill="#f59e0b" className="animate-pulse">
+                              <animate attributeName="r" values="4;6;4" dur="2s" repeatCount="indefinite" />
+                            </circle>
+                          );
+                        })}
+                        <circle cx="100" cy="100" r="12" fill="url(#gradient)" className="animate-pulse">
+                          <animate attributeName="r" values="12;15;12" dur="1.5s" repeatCount="indefinite" />
+                        </circle>
+                        <defs>
+                          <radialGradient id="gradient">
+                            <stop offset="0%" stopColor="#f59e0b" />
+                            <stop offset="100%" stopColor="#d97706" />
+                          </radialGradient>
+                        </defs>
+                      </svg>
+                      <div className="absolute inset-0 rounded-full bg-amber-500/20 blur-xl animate-pulse" />
+                    </div>
+                    
+                    <h3 className="text-xl font-bold text-white mb-2">Ready for Prediction</h3>
+                    <p className="text-sm text-gray-500 text-center max-w-xs">
+                      Adjust the feature values and click <span className="text-amber-500">"EXECUTE PREDICTION"</span> to see the AI in action
+                    </p>
+                    
+                    {/* Feature Progress */}
+                    <div className="w-full mt-6">
+                      <div className="flex justify-between text-xs text-gray-500 mb-2">
+                        <span>Features Configured</span>
+                        <span className="text-amber-500">{Object.keys(inputData).length} / {features.length}</span>
+                      </div>
+                      <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500"
+                          style={{ width: `${(Object.keys(inputData).length / features.length) * 100}%` }}
+                        />
+                      </div>
+                    </div>
+                    
+                    {/* Tip */}
+                    <div className="mt-6 p-3 bg-gray-800/30 rounded-lg border border-gray-700">
+                      <p className="text-xs text-gray-500 flex items-center gap-2">
+                        <Sparkles className="w-3 h-3 text-amber-500" />
+                        Tip: Use the sliders to adjust values and see real-time changes
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
-            )}
-            
-            {/* Model Information */}
-            <div className="w-full border-t border-gray-700 pt-4 mt-2">
-              <div className="flex items-center justify-between text-sm">
-                <div className="flex items-center gap-2">
-                  <Cpu className="w-4 h-4 text-amber-500" />
-                  <span className="text-gray-500">Model:</span>
-                  <span className="text-white font-mono text-xs">{bestModel}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-green-500" />
-                  <span className="text-gray-500">Status:</span>
-                  <span className="text-green-500">Active</span>
-                </div>
-              </div>
             </div>
-            
-            {/* Additional Insights */}
-            <div className="w-full mt-4 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
-              <div className="flex items-start gap-2">
-                <Lightbulb className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
-                <p className="text-xs text-gray-400">
-                  {typeof prediction.prediction === 'number' 
-                    ? `This prediction is based on ${features.length} input features with ${bestModel} algorithm.`
-                    : `Based on the input values, the model predicts "${prediction.prediction}" with high confidence.`}
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="border border-gray-700 rounded-2xl h-full flex flex-col items-center justify-center bg-gradient-to-br from-gray-900/30 to-black p-8">
-          {/* Animated Neural Network Visualization */}
-          <div className="relative w-48 h-48 mb-6">
-            <svg viewBox="0 0 200 200" className="w-full h-full">
-              {/* Outer Circle */}
-              <circle cx="100" cy="100" r="90" fill="none" stroke="#f59e0b" strokeWidth="1" strokeDasharray="5 5" className="animate-spin-slow" />
-              
-              {/* Inner Circles */}
-              <circle cx="100" cy="100" r="60" fill="none" stroke="#f59e0b" strokeWidth="1" opacity="0.5" />
-              <circle cx="100" cy="100" r="30" fill="none" stroke="#f59e0b" strokeWidth="1" opacity="0.3" />
-              
-              {/* Nodes */}
-              {[0, 45, 90, 135, 180, 225, 270, 315].map((angle, i) => {
-                const rad = (angle * Math.PI) / 180;
-                const x = 100 + 75 * Math.cos(rad);
-                const y = 100 + 75 * Math.sin(rad);
-                return (
-                  <circle key={i} cx={x} cy={y} r="4" fill="#f59e0b" className="animate-pulse">
-                    <animate attributeName="r" values="4;6;4" dur="2s" repeatCount="indefinite" />
-                  </circle>
-                );
-              })}
-              
-              {/* Center Node */}
-              <circle cx="100" cy="100" r="12" fill="url(#gradient)" className="animate-pulse">
-                <animate attributeName="r" values="12;15;12" dur="1.5s" repeatCount="indefinite" />
-              </circle>
-              
-              {/* Gradient Definition */}
-              <defs>
-                <radialGradient id="gradient">
-                  <stop offset="0%" stopColor="#f59e0b" />
-                  <stop offset="100%" stopColor="#d97706" />
-                </radialGradient>
-              </defs>
-              
-              {/* Connecting Lines */}
-              {[0, 45, 90, 135, 180, 225, 270, 315].map((angle, i) => {
-                const rad = (angle * Math.PI) / 180;
-                const x = 100 + 75 * Math.cos(rad);
-                const y = 100 + 75 * Math.sin(rad);
-                return (
-                  <line key={`line-${i}`} x1="100" y1="100" x2={x} y2={y} stroke="#f59e0b" strokeWidth="1" opacity="0.3">
-                    <animate attributeName="stroke-opacity" values="0.3;0.8;0.3" dur="2s" repeatCount="indefinite" />
-                  </line>
-                );
-              })}
-            </svg>
-            
-            {/* Pulsing Glow */}
-            <div className="absolute inset-0 rounded-full bg-amber-500/20 blur-xl animate-pulse" />
-          </div>
+          )}
           
-          <h3 className="text-xl font-bold text-white mb-2">Ready for Prediction</h3>
-          <p className="text-sm text-gray-500 text-center max-w-xs">
-            Adjust the feature values and click <span className="text-amber-500">"EXECUTE PREDICTION"</span> to see the AI in action
-          </p>
-          
-          {/* Feature Progress */}
-          <div className="w-full mt-6">
-            <div className="flex justify-between text-xs text-gray-500 mb-2">
-              <span>Features Configured</span>
-              <span className="text-amber-500">{Object.keys(inputData).length} / {features.length}</span>
-            </div>
-            <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
-              <div 
-                className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500"
-                style={{ width: `${(Object.keys(inputData).length / features.length) * 100}%` }}
-              />
-            </div>
-          </div>
-          
-          {/* Tip */}
-          <div className="mt-6 p-3 bg-gray-800/30 rounded-lg border border-gray-700">
-            <p className="text-xs text-gray-500 flex items-center gap-2">
-              <Sparkles className="w-3 h-3 text-amber-500" />
-              Tip: Use the sliders to adjust values and see real-time changes
-            </p>
-          </div>
-        </div>
-      )}
-    </div>
-  </div>
-)}
           {/* Info Tab */}
           {activeTab === "info" && (
             <div className="grid lg:grid-cols-2 gap-8">
