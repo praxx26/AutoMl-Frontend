@@ -67,7 +67,7 @@ function App() {
   const [targetStats, setTargetStats] = useState(null);
   const [targetDistribution, setTargetDistribution] = useState(null);
   const [features, setFeatures] = useState([]);
-  const [featureTypes, setFeatureTypes] = useState({}); // Track feature types
+  const [featureTypes, setFeatureTypes] = useState({});
   const [inputData, setInputData] = useState({});
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -147,7 +147,6 @@ function App() {
       setUploading(true);
       setUploadProgress(0);
       
-      // Simulate upload progress
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
           if (prev >= 90) {
@@ -176,13 +175,11 @@ function App() {
         setUploadProgress(0);
       }, 500);
       
-      // Detect feature types from preview data
       if (res.data.preview && res.data.preview.rows && res.data.preview.rows.length > 0) {
         const types = {};
         const sampleRow = res.data.preview.rows[0];
         res.data.columns.forEach(col => {
           const sampleValue = sampleRow[col];
-          // Check if value is string and not numeric
           if (typeof sampleValue === 'string' && isNaN(parseFloat(sampleValue))) {
             types[col] = 'categorical';
           } else {
@@ -218,7 +215,6 @@ function App() {
       const previewData = res.data.preview || [];
       setTargetPreview(previewData);
       
-      // Calculate target statistics
       const numericValues = previewData.filter(v => !isNaN(parseFloat(v)) && isFinite(v)).map(v => parseFloat(v));
       if (numericValues.length > 0) {
         const min = Math.min(...numericValues);
@@ -228,7 +224,6 @@ function App() {
         const median = sorted[Math.floor(sorted.length / 2)];
         const range = max - min;
         
-        // Calculate distribution (simple histogram)
         const numBins = 5;
         const binWidth = range / numBins;
         const bins = Array(numBins).fill(0);
@@ -311,7 +306,6 @@ function App() {
   };
 
   const handleInputChange = (col, value) => {
-    // For categorical features, handle string values
     if (featureTypes[col] === 'categorical') {
       setInputData({
         ...inputData,
@@ -343,22 +337,42 @@ function App() {
     }
   };
 
-  // Format prediction value based on type
+  // Enhanced format prediction function
   const formatPrediction = (value) => {
     if (value === undefined || value === null) return "N/A";
     
-    // Check if it's a numeric value
+    // Handle numeric values
     if (typeof value === 'number') {
-      // Check if it's a binary classification (0 or 1)
-      if (value === 0 || value === 1) {
-        return value === 1 ? "Positive" : "Negative";
-      }
+      // Binary classification (0 or 1)
+      if (value === 0) return "Negative";
+      if (value === 1) return "Positive";
       // For other numeric values, round to 2 decimal places
       return value.toFixed(2);
     }
     
-    // For string values, return as is
-    return value;
+    // Handle string values
+    if (typeof value === 'string') {
+      // Try to parse as number if it's a numeric string
+      const numValue = parseFloat(value);
+      if (!isNaN(numValue) && isFinite(numValue)) {
+        // Check if it's binary (0 or 1 as string)
+        if (numValue === 0) return "Negative";
+        if (numValue === 1) return "Positive";
+        return numValue.toFixed(2);
+      }
+      return value;
+    }
+    
+    return String(value);
+  };
+
+  // Get confidence level description
+  const getConfidenceDescription = (confidence) => {
+    if (confidence >= 0.9) return "Very High";
+    if (confidence >= 0.7) return "High";
+    if (confidence >= 0.5) return "Moderate";
+    if (confidence >= 0.3) return "Low";
+    return "Very Low";
   };
 
   const downloadModel = async () => {
@@ -376,7 +390,6 @@ function App() {
         }
       );
 
-      // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement("a");
       link.href = url;
@@ -447,16 +460,15 @@ function App() {
     }
   };
 
-  // Get unique values for categorical features from dataset
   const getCategoricalOptions = (feature) => {
     if (datasetPreview && datasetPreview.rows) {
       const uniqueValues = [...new Set(datasetPreview.rows.map(row => row[feature]))];
-      return uniqueValues.slice(0, 20); // Limit to 20 options
+      return uniqueValues.slice(0, 20);
     }
     return [];
   };
 
-  // Spectacular Training Animation Component
+  // Training Animation Component
   const TrainingAnimation = () => {
     const phases = [
       { name: "NEURAL SYNAPSE", message: "Establishing neural connections...", color: "from-purple-500 to-pink-500" },
@@ -536,7 +548,7 @@ function App() {
     );
   };
 
-  // Page 1: Upload Page with Animated Loading
+  // Page 1: Upload Page
   const renderStep0 = () => (
     <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
       <div className="relative min-h-[50vh] flex items-center justify-center overflow-hidden">
@@ -748,7 +760,7 @@ function App() {
     </div>
   );
 
-  // Page 2: Enhanced Target Selection with Stats and Distribution
+  // Page 2: Target Selection Page
   const renderStep1 = () => (
     <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
       <div className="max-w-7xl mx-auto px-4 py-8 md:py-12">
@@ -777,7 +789,6 @@ function App() {
         </div>
 
         <div className="grid lg:grid-cols-2 gap-8">
-          {/* Left Column - Target Selection Card */}
           <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
             <div className="border-b border-gray-800 p-5 bg-gray-900/50">
               <div className="flex items-center gap-2">
@@ -806,13 +817,11 @@ function App() {
 
               {target && targetStats && (
                 <div className="space-y-5">
-                  {/* Selected Target Badge */}
                   <div className="bg-gradient-to-r from-amber-500/10 to-transparent p-4 rounded-xl border-l-4 border-amber-500">
                     <p className="text-xs text-gray-500 mb-1">SELECTED TARGET</p>
                     <p className="text-2xl font-mono font-bold text-white">{target}</p>
                   </div>
 
-                  {/* Statistics Grid - Clean Cards */}
                   <div className="grid grid-cols-2 gap-4">
                     <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
                       <p className="text-xs text-gray-500 mb-1">MINIMUM</p>
@@ -832,7 +841,6 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Range Card */}
                   <div className="bg-black/30 rounded-xl p-5 border border-gray-800">
                     <div className="flex items-center justify-between mb-3">
                       <p className="text-sm font-mono text-gray-400">DATA RANGE</p>
@@ -855,7 +863,6 @@ function App() {
                     </div>
                   </div>
 
-                  {/* Insights Card */}
                   <div className="bg-gradient-to-r from-amber-500/5 to-transparent rounded-xl p-5 border border-amber-500/20">
                     <div className="flex items-center gap-2 mb-3">
                       <Lightbulb className="w-4 h-4 text-amber-500" />
@@ -867,11 +874,6 @@ function App() {
                       </p>
                       <p className="text-gray-300">
                         <span className="text-amber-500">•</span> Mean vs Median: <span className="text-white font-mono">{Math.abs(targetStats.mean - targetStats.median).toFixed(2)}</span> difference
-                      </p>
-                      <p className="text-gray-300">
-                        <span className="text-amber-500">•</span> Distribution: <span className="text-white">
-                          {targetStats.range / targetStats.mean * 100 > 50 ? 'High variability' : 'Moderate variability'}
-                        </span>
                       </p>
                       <p className="text-gray-300">
                         <span className="text-amber-500">•</span> Data points: <span className="text-white font-mono">{targetPreview.length}</span> samples
@@ -909,7 +911,6 @@ function App() {
             </div>
           </div>
 
-          {/* Right Column - Data Preview Card */}
           <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
             <div className="border-b border-gray-800 p-5 bg-gray-900/50">
               <div className="flex items-center gap-2">
@@ -921,7 +922,6 @@ function App() {
             <div className="p-6">
               {target ? (
                 <div className="space-y-6">
-                  {/* Distribution Chart - Clean Bars */}
                   {targetDistribution && (
                     <div>
                       <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Distribution Analysis</p>
@@ -954,7 +954,6 @@ function App() {
                     </div>
                   )}
                   
-                  {/* Sample Values Grid - Clean Layout */}
                   <div>
                     <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Sample Values</p>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -993,9 +992,8 @@ function App() {
     </div>
   );
 
-  // Page 3: Results Page with Carousel and Download Button
+  // Page 3: Results Page
   const renderStep2 = () => {
-    // Show loading if leaderboard is empty
     if (!leaderboard || leaderboard.length === 0) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
@@ -1061,7 +1059,6 @@ function App() {
             <p className="text-gray-500">Your AI-powered analysis is ready</p>
           </div>
 
-          {/* Tab Navigation */}
           <div className="flex border-b border-gray-700 mb-12 justify-center">
             <button
               onClick={() => setActiveTab("models")}
@@ -1095,10 +1092,8 @@ function App() {
             </button>
           </div>
 
-          {/* Models Tab - Carousel Slider */}
           {activeTab === "models" && (
             <div>
-              {/* Recommendation Banner */}
               {recommendation && (
                 <div className="mb-8 border-l-4 border-amber-500 p-4 bg-gradient-to-r from-amber-500/10 to-transparent rounded-r-xl max-w-2xl mx-auto">
                   <div className="flex items-start gap-3">
@@ -1111,9 +1106,7 @@ function App() {
                 </div>
               )}
 
-              {/* Carousel Container */}
               <div className="relative flex items-center justify-center min-h-[550px]">
-                {/* Left Navigation Button */}
                 {leaderboard.length > 1 && (
                   <button
                     onClick={prevCarousel}
@@ -1123,19 +1116,15 @@ function App() {
                   </button>
                 )}
 
-                {/* Main Card */}
                 <div className="relative w-full max-w-2xl mx-12">
                   <div className="relative">
-                    {/* Glow Effect for Best Model */}
                     {isBest && (
                       <div className="absolute -inset-0.5 bg-gradient-to-r from-amber-500 to-amber-600 rounded-2xl blur-xl opacity-75 animate-pulse" />
                     )}
                     
-                    {/* Main Card */}
                     <div className={`relative bg-gradient-to-br from-gray-900 to-black border rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 ${
                       isBest ? "border-amber-500" : "border-gray-700"
                     }`}>
-                      {/* Best Model Badge */}
                       {isBest && (
                         <div className="absolute top-0 right-0 z-10">
                           <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-black px-6 py-2 rounded-bl-2xl font-bold text-sm flex items-center gap-2">
@@ -1146,7 +1135,6 @@ function App() {
                       )}
                       
                       <div className="p-8 text-center">
-                        {/* Model Icon */}
                         <div className={`w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center ${
                           isBest 
                             ? "bg-gradient-to-r from-amber-500 to-amber-600" 
@@ -1159,12 +1147,10 @@ function App() {
                           )}
                         </div>
                         
-                        {/* Model Name */}
                         <h3 className="text-3xl md:text-4xl font-bold text-white mb-2">
                           {currentModel?.model}
                         </h3>
                         
-                        {/* CV Score */}
                         <div className="mb-6">
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Cross-Validation Score</p>
                           <p className="text-5xl md:text-6xl font-black bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">
@@ -1172,7 +1158,6 @@ function App() {
                           </p>
                         </div>
                         
-                        {/* Train/Test Scores */}
                         <div className="grid grid-cols-2 gap-4 mb-6">
                           <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
                             <p className="text-xs text-gray-500 mb-1">TRAIN SCORE</p>
@@ -1196,7 +1181,6 @@ function App() {
                           </div>
                         </div>
                         
-                        {/* Performance Indicator */}
                         <div className="flex items-center justify-center gap-2 text-sm">
                           <Gauge className="w-4 h-4 text-amber-500" />
                           <span className="text-gray-400">Performance Rating:</span>
@@ -1209,7 +1193,6 @@ function App() {
                   </div>
                 </div>
 
-                {/* Right Navigation Button */}
                 {leaderboard.length > 1 && (
                   <button
                     onClick={nextCarousel}
@@ -1220,7 +1203,6 @@ function App() {
                 )}
               </div>
 
-              {/* Model Indicators */}
               {leaderboard.length > 1 && (
                 <>
                   <div className="flex justify-center gap-2 mt-8">
@@ -1236,7 +1218,6 @@ function App() {
                       />
                     ))}
                   </div>
-
                   <div className="text-center mt-4">
                     <p className="text-sm text-gray-600 font-mono">
                       {currentCarouselIndex + 1} / {leaderboard.length} Models
@@ -1245,7 +1226,6 @@ function App() {
                 </>
               )}
 
-              {/* Download Button */}
               <div className="flex justify-center mt-8">
                 <button
                   onClick={downloadModel}
@@ -1267,7 +1247,6 @@ function App() {
                 </button>
               </div>
 
-              {/* Best Model Parameters */}
               {bestModel && Object.keys(bestParams).length > 0 && (
                 <div className="mt-8 max-w-2xl mx-auto">
                   <div className="border border-gray-700 p-6 rounded-xl bg-gray-900/50 backdrop-blur-sm">
@@ -1287,7 +1266,6 @@ function App() {
                 </div>
               )}
 
-              {/* Educational Footer */}
               <div className="mt-8 max-w-md mx-auto">
                 <div className="border border-gray-700 p-4 rounded-xl bg-gradient-to-br from-gray-900/50 to-black text-center">
                   <div className="flex items-center justify-center gap-2">
@@ -1299,10 +1277,8 @@ function App() {
             </div>
           )}
 
-          {/* Predict Tab - Fixed Box Layout */}
           {activeTab === "predict" && (
             <div className="grid lg:grid-cols-2 gap-8">
-              {/* Left Side - Feature Input */}
               <div className="space-y-6">
                 <div className="relative overflow-hidden border border-gray-700 rounded-2xl bg-gradient-to-br from-gray-900/50 to-black backdrop-blur-sm">
                   <div className="relative p-6">
@@ -1469,15 +1445,12 @@ function App() {
                 )}
               </div>
               
-              {/* Right Side - Prediction Result - FIXED INSIDE BOX */}
               <div className="relative">
                 {prediction ? (
                   <div className="relative h-full min-h-[500px]">
-                    {/* Animated Background */}
                     <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 via-transparent to-purple-500/20 rounded-2xl blur-xl animate-pulse" />
                     
                     <div className="relative border border-amber-500 rounded-2xl bg-gradient-to-br from-gray-900 to-black p-8 h-full flex flex-col items-center justify-center overflow-hidden">
-                      {/* Floating Particles */}
                       <div className="absolute inset-0 pointer-events-none">
                         {[...Array(20)].map((_, i) => (
                           <div
@@ -1495,7 +1468,6 @@ function App() {
                         ))}
                       </div>
                       
-                      {/* Success Icon with Ripple Effect */}
                       <div className="relative mb-6">
                         <div className="absolute inset-0 rounded-full bg-amber-500/30 animate-ping" />
                         <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-pulse" />
@@ -1508,12 +1480,11 @@ function App() {
                         PREDICTION RESULT
                       </h3>
                       
-                      {/* Main Prediction Value - Formatted */}
+                      {/* Main Prediction Value - Using enhanced formatPrediction */}
                       <p className="text-5xl md:text-6xl font-black bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 bg-clip-text text-transparent mb-4 break-words text-center">
                         {formatPrediction(prediction.prediction)}
                       </p>
                       
-                      {/* Confidence Score */}
                       {prediction.confidence && (
                         <div className="mb-6 text-center w-full">
                           <p className="text-xs text-gray-500 mb-1">Confidence Score</p>
@@ -1526,10 +1497,12 @@ function App() {
                               />
                             </div>
                           </div>
+                          <p className="text-xs text-amber-500 mt-1">
+                            {getConfidenceDescription(prediction.confidence)} Confidence
+                          </p>
                         </div>
                       )}
                       
-                      {/* Model Information */}
                       <div className="w-full border-t border-gray-700 pt-4 mt-2">
                         <div className="flex items-center justify-between text-sm">
                           <div className="flex items-center gap-2">
@@ -1545,16 +1518,20 @@ function App() {
                         </div>
                       </div>
                       
-                      {/* Additional Insights */}
                       <div className="w-full mt-4 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
                         <div className="flex items-start gap-2">
                           <Lightbulb className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                           <p className="text-xs text-gray-400">
-                            {typeof prediction.prediction === 'number' && (prediction.prediction === 0 || prediction.prediction === 1)
-                              ? `Based on the input values, the model predicts "${prediction.prediction === 1 ? 'Positive' : 'Negative'}" with ${(prediction.confidence * 100).toFixed(1)}% confidence.`
-                              : typeof prediction.prediction === 'number'
-                              ? `This prediction is based on ${features.length} input features with ${bestModel} algorithm.`
-                              : `Based on the input values, the model predicts "${prediction.prediction}" with high confidence.`}
+                            {(() => {
+                              const val = prediction.prediction;
+                              if (typeof val === 'number' && (val === 0 || val === 1)) {
+                                return `Based on the input values, the model predicts "${val === 1 ? 'Positive' : 'Negative'}" with ${(prediction.confidence * 100).toFixed(1)}% confidence.`;
+                              } else if (typeof val === 'number') {
+                                return `Predicted value: ${val.toFixed(2)}. This prediction is based on ${features.length} input features using the ${bestModel} algorithm.`;
+                              } else {
+                                return `Based on the input values, the model predicts "${val}" with high confidence.`;
+                              }
+                            })()}
                           </p>
                         </div>
                       </div>
@@ -1562,7 +1539,6 @@ function App() {
                   </div>
                 ) : (
                   <div className="border border-gray-700 rounded-2xl h-full min-h-[500px] flex flex-col items-center justify-center bg-gradient-to-br from-gray-900/30 to-black p-8">
-                    {/* Animated Neural Network Visualization */}
                     <div className="relative w-48 h-48 mb-6">
                       <svg viewBox="0 0 200 200" className="w-full h-full">
                         <circle cx="100" cy="100" r="90" fill="none" stroke="#f59e0b" strokeWidth="1" strokeDasharray="5 5" className="animate-spin-slow" />
@@ -1596,7 +1572,6 @@ function App() {
                       Adjust the feature values and click <span className="text-amber-500">"EXECUTE PREDICTION"</span> to see the AI in action
                     </p>
                     
-                    {/* Feature Progress */}
                     <div className="w-full mt-6">
                       <div className="flex justify-between text-xs text-gray-500 mb-2">
                         <span>Features Configured</span>
@@ -1610,7 +1585,6 @@ function App() {
                       </div>
                     </div>
                     
-                    {/* Tip */}
                     <div className="mt-6 p-3 bg-gray-800/30 rounded-lg border border-gray-700">
                       <p className="text-xs text-gray-500 flex items-center gap-2">
                         <Sparkles className="w-3 h-3 text-amber-500" />
@@ -1623,7 +1597,6 @@ function App() {
             </div>
           )}
           
-          {/* Info Tab */}
           {activeTab === "info" && (
             <div className="grid lg:grid-cols-2 gap-8">
               <div className="border border-gray-700 p-6 rounded-2xl bg-gray-900/30 backdrop-blur-sm">
