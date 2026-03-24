@@ -67,6 +67,7 @@ function App() {
   const [targetStats, setTargetStats] = useState(null);
   const [targetDistribution, setTargetDistribution] = useState(null);
   const [features, setFeatures] = useState([]);
+  const [featureTypes, setFeatureTypes] = useState({}); // Track feature types
   const [inputData, setInputData] = useState({});
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -151,6 +152,22 @@ function App() {
       setDatasetId(res.data.dataset_id);
       setColumns(res.data.columns);
       setDatasetPreview(res.data.preview || { rows: [], columns: res.data.columns });
+      
+      // Detect feature types from preview data
+      if (res.data.preview && res.data.preview.rows && res.data.preview.rows.length > 0) {
+        const types = {};
+        const sampleRow = res.data.preview.rows[0];
+        res.data.columns.forEach(col => {
+          const sampleValue = sampleRow[col];
+          // Check if value is string and not numeric
+          if (typeof sampleValue === 'string' && isNaN(parseFloat(sampleValue))) {
+            types[col] = 'categorical';
+          } else {
+            types[col] = 'numeric';
+          }
+        });
+        setFeatureTypes(types);
+      }
       
       const historyEntry = {
         id: Date.now(),
@@ -272,10 +289,18 @@ function App() {
   };
 
   const handleInputChange = (col, value) => {
-    setInputData({
-      ...inputData,
-      [col]: parseFloat(value) || 0
-    });
+    // For categorical features, handle string values
+    if (featureTypes[col] === 'categorical') {
+      setInputData({
+        ...inputData,
+        [col]: value
+      });
+    } else {
+      setInputData({
+        ...inputData,
+        [col]: parseFloat(value) || 0
+      });
+    }
   };
 
   const predict = async () => {
@@ -340,6 +365,7 @@ function App() {
     setTargetStats(null);
     setTargetDistribution(null);
     setFeatures([]);
+    setFeatureTypes({});
     setInputData({});
     setPrediction(null);
     setBestModel("");
@@ -379,6 +405,15 @@ function App() {
     if (leaderboard.length > 0) {
       setCurrentCarouselIndex((prev) => (prev - 1 + leaderboard.length) % leaderboard.length);
     }
+  };
+
+  // Get unique values for categorical features from dataset
+  const getCategoricalOptions = (feature) => {
+    if (datasetPreview && datasetPreview.rows) {
+      const uniqueValues = [...new Set(datasetPreview.rows.map(row => row[feature]))];
+      return uniqueValues.slice(0, 20); // Limit to 20 options
+    }
+    return [];
   };
 
   // Spectacular Training Animation Component
@@ -476,7 +511,7 @@ function App() {
             </div>
           </div>
           <h1 className="text-7xl md:text-9xl font-black text-white tracking-tighter mb-4">
-            ML<span className="bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">STUDIO</span>
+            Auto<span className="bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">ML</span>
           </h1>
           <p className="text-xl md:text-2xl text-gray-400 max-w-2xl mx-auto">
             Upload your dataset. Let AI find your perfect model.
@@ -633,250 +668,249 @@ function App() {
   );
 
   // Page 2: Enhanced Target Selection with Stats and Distribution
-  // Page 2: Modern Target Selection with Clean UI
-const renderStep1 = () => (
-  <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
-    <div className="max-w-7xl mx-auto px-4 py-8 md:py-12">
-      <div className="mb-6 md:mb-8 flex items-center justify-between">
-        <button
-          onClick={goBack}
-          className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-4 md:px-5 py-2 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm"
-        >
-          <ChevronRight className="w-4 h-4 rotate-180" />
-          <span>BACK</span>
-        </button>
-        <button
-          onClick={resetToHome}
-          className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-4 md:px-5 py-2 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm"
-        >
-          <Home className="w-4 h-4" />
-          <span>HOME</span>
-        </button>
-      </div>
-
-      <div className="text-center mb-10 md:mb-12">
-        <h2 className="text-4xl md:text-6xl font-black text-white tracking-tighter mb-3">
-          SELECT <span className="bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">TARGET</span>
-        </h2>
-        <p className="text-gray-500 text-base">Choose the column you want to predict</p>
-      </div>
-
-      <div className="grid lg:grid-cols-2 gap-8">
-        {/* Left Column - Target Selection Card */}
-        <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
-          <div className="border-b border-gray-800 p-5 bg-gray-900/50">
-            <div className="flex items-center gap-2">
-              <Target className="w-5 h-5 text-amber-500" />
-              <h3 className="font-mono text-white text-sm tracking-wider">TARGET COLUMN</h3>
-            </div>
-          </div>
-          
-          <div className="p-6 space-y-6">
-            <select
-              value={target}
-              onChange={(e) => {
-                const selected = e.target.value;
-                setTarget(selected);
-                if (selected && datasetId) {
-                  fetchTargetPreview(selected);
-                }
-              }}
-              className="w-full p-4 bg-black/50 border border-gray-700 focus:border-amber-500 outline-none text-white font-mono rounded-xl transition-all duration-300 text-base"
-            >
-              <option value="">Select target column...</option>
-              {columns.map((col, i) => (
-                <option key={i} value={col}>{col}</option>
-              ))}
-            </select>
-
-            {target && targetStats && (
-              <div className="space-y-5">
-                {/* Selected Target Badge */}
-                <div className="bg-gradient-to-r from-amber-500/10 to-transparent p-4 rounded-xl border-l-4 border-amber-500">
-                  <p className="text-xs text-gray-500 mb-1">SELECTED TARGET</p>
-                  <p className="text-2xl font-mono font-bold text-white">{target}</p>
-                </div>
-
-                {/* Statistics Grid - Clean Cards */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
-                    <p className="text-xs text-gray-500 mb-1">MINIMUM</p>
-                    <p className="text-2xl font-bold text-white">{targetStats.min.toFixed(2)}</p>
-                  </div>
-                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
-                    <p className="text-xs text-gray-500 mb-1">MAXIMUM</p>
-                    <p className="text-2xl font-bold text-white">{targetStats.max.toFixed(2)}</p>
-                  </div>
-                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
-                    <p className="text-xs text-gray-500 mb-1">MEAN (AVERAGE)</p>
-                    <p className="text-2xl font-bold text-amber-500">{targetStats.mean.toFixed(2)}</p>
-                  </div>
-                  <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
-                    <p className="text-xs text-gray-500 mb-1">MEDIAN</p>
-                    <p className="text-2xl font-bold text-amber-500">{targetStats.median.toFixed(2)}</p>
-                  </div>
-                </div>
-
-                {/* Range Card */}
-                <div className="bg-black/30 rounded-xl p-5 border border-gray-800">
-                  <div className="flex items-center justify-between mb-3">
-                    <p className="text-sm font-mono text-gray-400">DATA RANGE</p>
-                    <p className="text-xl font-bold text-white">{targetStats.range.toFixed(2)}</p>
-                  </div>
-                  <div className="relative h-2 bg-gray-800 rounded-full overflow-hidden">
-                    <div 
-                      className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-full"
-                      style={{ width: '100%' }}
-                    />
-                    <div 
-                      className="absolute inset-y-0 bg-white rounded-full shadow-lg"
-                      style={{ left: `${((targetStats.mean - targetStats.min) / targetStats.range) * 100}%`, width: '3px' }}
-                    />
-                  </div>
-                  <div className="flex justify-between text-xs text-gray-600 mt-2">
-                    <span>{targetStats.min.toFixed(0)}</span>
-                    <span className="text-amber-500">Mean: {targetStats.mean.toFixed(0)}</span>
-                    <span>{targetStats.max.toFixed(0)}</span>
-                  </div>
-                </div>
-
-                {/* Insights Card */}
-                <div className="bg-gradient-to-r from-amber-500/5 to-transparent rounded-xl p-5 border border-amber-500/20">
-                  <div className="flex items-center gap-2 mb-3">
-                    <Lightbulb className="w-4 h-4 text-amber-500" />
-                    <p className="text-xs font-mono text-amber-500 uppercase tracking-wider">Key Insights</p>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <p className="text-gray-300">
-                      <span className="text-amber-500">•</span> Range: <span className="text-white font-mono">{targetStats.range.toFixed(2)}</span> units spread
-                    </p>
-                    <p className="text-gray-300">
-                      <span className="text-amber-500">•</span> Mean vs Median: <span className="text-white font-mono">{Math.abs(targetStats.mean - targetStats.median).toFixed(2)}</span> difference
-                    </p>
-                    <p className="text-gray-300">
-                      <span className="text-amber-500">•</span> Distribution: <span className="text-white">
-                        {targetStats.range / targetStats.mean * 100 > 50 ? 'High variability' : 'Moderate variability'}
-                      </span>
-                    </p>
-                    <p className="text-gray-300">
-                      <span className="text-amber-500">•</span> Data points: <span className="text-white font-mono">{targetPreview.length}</span> samples
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {trainError && (
-              <div className="border border-red-500/30 p-4 bg-red-500/10 rounded-xl">
-                <p className="text-red-400 text-sm">Error: {trainError}</p>
-              </div>
-            )}
-
-            {target && (
-              <button
-                onClick={trainModel}
-                disabled={isTraining}
-                className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider hover:shadow-2xl hover:shadow-amber-500/30 transition-all duration-300 disabled:opacity-50 rounded-xl transform hover:scale-[1.02] text-base"
-              >
-                {isTraining ? (
-                  <div className="flex items-center justify-center gap-2">
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    <span>INITIATING TRAINING...</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-center gap-2">
-                    <Rocket className="w-5 h-5" />
-                    <span>START AI TRAINING</span>
-                  </div>
-                )}
-              </button>
-            )}
-          </div>
+  const renderStep1 = () => (
+    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
+      <div className="max-w-7xl mx-auto px-4 py-8 md:py-12">
+        <div className="mb-6 md:mb-8 flex items-center justify-between">
+          <button
+            onClick={goBack}
+            className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-4 md:px-5 py-2 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm"
+          >
+            <ChevronRight className="w-4 h-4 rotate-180" />
+            <span>BACK</span>
+          </button>
+          <button
+            onClick={resetToHome}
+            className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-4 md:px-5 py-2 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm"
+          >
+            <Home className="w-4 h-4" />
+            <span>HOME</span>
+          </button>
         </div>
 
-        {/* Right Column - Data Preview Card */}
-        <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
-          <div className="border-b border-gray-800 p-5 bg-gray-900/50">
-            <div className="flex items-center gap-2">
-              <BarChart3 className="w-5 h-5 text-amber-500" />
-              <h3 className="font-mono text-white text-sm tracking-wider">DATA PREVIEW</h3>
+        <div className="text-center mb-10 md:mb-12">
+          <h2 className="text-4xl md:text-6xl font-black text-white tracking-tighter mb-3">
+            SELECT <span className="bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">TARGET</span>
+          </h2>
+          <p className="text-gray-500 text-base">Choose the column you want to predict</p>
+        </div>
+
+        <div className="grid lg:grid-cols-2 gap-8">
+          {/* Left Column - Target Selection Card */}
+          <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
+            <div className="border-b border-gray-800 p-5 bg-gray-900/50">
+              <div className="flex items-center gap-2">
+                <Target className="w-5 h-5 text-amber-500" />
+                <h3 className="font-mono text-white text-sm tracking-wider">TARGET COLUMN</h3>
+              </div>
             </div>
-          </div>
-          
-          <div className="p-6">
-            {target ? (
-              <div className="space-y-6">
-                {/* Distribution Chart - Clean Bars */}
-                {targetDistribution && (
-                  <div>
-                    <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Distribution Analysis</p>
-                    <div className="space-y-3">
-                      {targetDistribution.bins.map((count, idx) => {
-                        const binStart = targetDistribution.min + idx * targetDistribution.binWidth;
-                        const binEnd = binStart + targetDistribution.binWidth;
-                        const maxCount = Math.max(...targetDistribution.bins);
-                        const percentage = (count / maxCount) * 100;
-                        return (
-                          <div key={idx} className="group">
-                            <div className="flex items-center justify-between mb-1">
-                              <span className="text-xs text-gray-500 font-mono">
-                                {binStart.toFixed(1)} - {binEnd.toFixed(1)}
-                              </span>
-                              <span className="text-xs text-amber-500 font-mono">{count} samples</span>
-                            </div>
-                            <div className="h-10 bg-gray-800 rounded-lg overflow-hidden">
-                              <div 
-                                className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-lg transition-all duration-500 flex items-center justify-end px-3"
-                                style={{ width: `${percentage}%` }}
-                              >
-                                <span className="text-xs text-white font-bold">{percentage.toFixed(0)}%</span>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
+            
+            <div className="p-6 space-y-6">
+              <select
+                value={target}
+                onChange={(e) => {
+                  const selected = e.target.value;
+                  setTarget(selected);
+                  if (selected && datasetId) {
+                    fetchTargetPreview(selected);
+                  }
+                }}
+                className="w-full p-4 bg-black/50 border border-gray-700 focus:border-amber-500 outline-none text-white font-mono rounded-xl transition-all duration-300 text-base"
+              >
+                <option value="">Select target column...</option>
+                {columns.map((col, i) => (
+                  <option key={i} value={col}>{col}</option>
+                ))}
+              </select>
+
+              {target && targetStats && (
+                <div className="space-y-5">
+                  {/* Selected Target Badge */}
+                  <div className="bg-gradient-to-r from-amber-500/10 to-transparent p-4 rounded-xl border-l-4 border-amber-500">
+                    <p className="text-xs text-gray-500 mb-1">SELECTED TARGET</p>
+                    <p className="text-2xl font-mono font-bold text-white">{target}</p>
+                  </div>
+
+                  {/* Statistics Grid - Clean Cards */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
+                      <p className="text-xs text-gray-500 mb-1">MINIMUM</p>
+                      <p className="text-2xl font-bold text-white">{targetStats.min.toFixed(2)}</p>
+                    </div>
+                    <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
+                      <p className="text-xs text-gray-500 mb-1">MAXIMUM</p>
+                      <p className="text-2xl font-bold text-white">{targetStats.max.toFixed(2)}</p>
+                    </div>
+                    <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
+                      <p className="text-xs text-gray-500 mb-1">MEAN (AVERAGE)</p>
+                      <p className="text-2xl font-bold text-amber-500">{targetStats.mean.toFixed(2)}</p>
+                    </div>
+                    <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
+                      <p className="text-xs text-gray-500 mb-1">MEDIAN</p>
+                      <p className="text-2xl font-bold text-amber-500">{targetStats.median.toFixed(2)}</p>
                     </div>
                   </div>
-                )}
-                
-                {/* Sample Values Grid - Clean Layout */}
-                <div>
-                  <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Sample Values</p>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {targetPreview.slice(0, 12).map((value, idx) => (
+
+                  {/* Range Card */}
+                  <div className="bg-black/30 rounded-xl p-5 border border-gray-800">
+                    <div className="flex items-center justify-between mb-3">
+                      <p className="text-sm font-mono text-gray-400">DATA RANGE</p>
+                      <p className="text-xl font-bold text-white">{targetStats.range.toFixed(2)}</p>
+                    </div>
+                    <div className="relative h-2 bg-gray-800 rounded-full overflow-hidden">
                       <div 
-                        key={idx} 
-                        className="bg-black/30 rounded-lg p-3 text-center border border-gray-800 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all duration-300 group"
-                      >
-                        <span className="text-gray-400 text-xs group-hover:text-amber-500 transition">#{idx + 1}</span>
-                        <p className="text-white font-mono text-base font-bold mt-1">{String(value)}</p>
-                      </div>
-                    ))}
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-full"
+                        style={{ width: '100%' }}
+                      />
+                      <div 
+                        className="absolute inset-y-0 bg-white rounded-full shadow-lg"
+                        style={{ left: `${((targetStats.mean - targetStats.min) / targetStats.range) * 100}%`, width: '3px' }}
+                      />
+                    </div>
+                    <div className="flex justify-between text-xs text-gray-600 mt-2">
+                      <span>{targetStats.min.toFixed(0)}</span>
+                      <span className="text-amber-500">Mean: {targetStats.mean.toFixed(0)}</span>
+                      <span>{targetStats.max.toFixed(0)}</span>
+                    </div>
                   </div>
-                  {targetPreview.length > 12 && (
-                    <p className="text-xs text-gray-600 text-center mt-4 pt-2 border-t border-gray-800">
-                      + {targetPreview.length - 12} more values
-                    </p>
+
+                  {/* Insights Card */}
+                  <div className="bg-gradient-to-r from-amber-500/5 to-transparent rounded-xl p-5 border border-amber-500/20">
+                    <div className="flex items-center gap-2 mb-3">
+                      <Lightbulb className="w-4 h-4 text-amber-500" />
+                      <p className="text-xs font-mono text-amber-500 uppercase tracking-wider">Key Insights</p>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <p className="text-gray-300">
+                        <span className="text-amber-500">•</span> Range: <span className="text-white font-mono">{targetStats.range.toFixed(2)}</span> units spread
+                      </p>
+                      <p className="text-gray-300">
+                        <span className="text-amber-500">•</span> Mean vs Median: <span className="text-white font-mono">{Math.abs(targetStats.mean - targetStats.median).toFixed(2)}</span> difference
+                      </p>
+                      <p className="text-gray-300">
+                        <span className="text-amber-500">•</span> Distribution: <span className="text-white">
+                          {targetStats.range / targetStats.mean * 100 > 50 ? 'High variability' : 'Moderate variability'}
+                        </span>
+                      </p>
+                      <p className="text-gray-300">
+                        <span className="text-amber-500">•</span> Data points: <span className="text-white font-mono">{targetPreview.length}</span> samples
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {trainError && (
+                <div className="border border-red-500/30 p-4 bg-red-500/10 rounded-xl">
+                  <p className="text-red-400 text-sm">Error: {trainError}</p>
+                </div>
+              )}
+
+              {target && (
+                <button
+                  onClick={trainModel}
+                  disabled={isTraining}
+                  className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider hover:shadow-2xl hover:shadow-amber-500/30 transition-all duration-300 disabled:opacity-50 rounded-xl transform hover:scale-[1.02] text-base"
+                >
+                  {isTraining ? (
+                    <div className="flex items-center justify-center gap-2">
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                      <span>INITIATING TRAINING...</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-2">
+                      <Rocket className="w-5 h-5" />
+                      <span>START AI TRAINING</span>
+                    </div>
                   )}
-                </div>
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Right Column - Data Preview Card */}
+          <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
+            <div className="border-b border-gray-800 p-5 bg-gray-900/50">
+              <div className="flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-amber-500" />
+                <h3 className="font-mono text-white text-sm tracking-wider">DATA PREVIEW</h3>
               </div>
-            ) : (
-              <div className="text-center py-16">
-                <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-800/50 flex items-center justify-center">
-                  <Target className="w-10 h-10 text-gray-600" />
+            </div>
+            
+            <div className="p-6">
+              {target ? (
+                <div className="space-y-6">
+                  {/* Distribution Chart - Clean Bars */}
+                  {targetDistribution && (
+                    <div>
+                      <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Distribution Analysis</p>
+                      <div className="space-y-3">
+                        {targetDistribution.bins.map((count, idx) => {
+                          const binStart = targetDistribution.min + idx * targetDistribution.binWidth;
+                          const binEnd = binStart + targetDistribution.binWidth;
+                          const maxCount = Math.max(...targetDistribution.bins);
+                          const percentage = (count / maxCount) * 100;
+                          return (
+                            <div key={idx} className="group">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-xs text-gray-500 font-mono">
+                                  {binStart.toFixed(1)} - {binEnd.toFixed(1)}
+                                </span>
+                                <span className="text-xs text-amber-500 font-mono">{count} samples</span>
+                              </div>
+                              <div className="h-10 bg-gray-800 rounded-lg overflow-hidden">
+                                <div 
+                                  className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-lg transition-all duration-500 flex items-center justify-end px-3"
+                                  style={{ width: `${percentage}%` }}
+                                >
+                                  <span className="text-xs text-white font-bold">{percentage.toFixed(0)}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Sample Values Grid - Clean Layout */}
+                  <div>
+                    <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Sample Values</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      {targetPreview.slice(0, 12).map((value, idx) => (
+                        <div 
+                          key={idx} 
+                          className="bg-black/30 rounded-lg p-3 text-center border border-gray-800 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all duration-300 group"
+                        >
+                          <span className="text-gray-400 text-xs group-hover:text-amber-500 transition">#{idx + 1}</span>
+                          <p className="text-white font-mono text-base font-bold mt-1">{String(value)}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {targetPreview.length > 12 && (
+                      <p className="text-xs text-gray-600 text-center mt-4 pt-2 border-t border-gray-800">
+                        + {targetPreview.length - 12} more values
+                      </p>
+                    )}
+                  </div>
                 </div>
-                <p className="text-gray-500 text-base">No target selected</p>
-                <p className="text-gray-600 text-sm mt-2">Choose a target column to see statistics</p>
-              </div>
-            )}
+              ) : (
+                <div className="text-center py-16">
+                  <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-800/50 flex items-center justify-center">
+                    <Target className="w-10 h-10 text-gray-600" />
+                  </div>
+                  <p className="text-gray-500 text-base">No target selected</p>
+                  <p className="text-gray-600 text-sm mt-2">Choose a target column to see statistics</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
-    </div>
 
-    {trainingAnimation && <TrainingAnimation />}
-  </div>
-);
+      {trainingAnimation && <TrainingAnimation />}
+    </div>
+  );
 
   // Page 3: Results Page with Carousel and Download Button
   const renderStep2 = () => {
@@ -1203,7 +1237,46 @@ const renderStep1 = () => (
                     
                     <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2 custom-scroll">
                       {features.map((col, idx) => {
-                        const currentValue = inputData[col] || 0;
+                        const currentValue = inputData[col] || (featureTypes[col] === 'categorical' ? '' : 0);
+                        const isCategorical = featureTypes[col] === 'categorical';
+                        const options = isCategorical ? getCategoricalOptions(col) : [];
+                        
+                        if (isCategorical) {
+                          return (
+                            <div key={idx} className="group relative">
+                              <div className="flex items-center justify-between mb-2">
+                                <label className="text-xs font-mono text-gray-400 group-hover:text-amber-500 transition-all duration-300 flex items-center gap-2">
+                                  <span className="w-1 h-1 rounded-full bg-amber-500"></span>
+                                  {col.toUpperCase()}
+                                </label>
+                                <span className="text-xs font-mono text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">
+                                  Categorical
+                                </span>
+                              </div>
+                              
+                              <select
+                                value={currentValue}
+                                onChange={(e) => handleInputChange(col, e.target.value)}
+                                className="w-full p-3 bg-black/50 border border-gray-700 focus:border-amber-500 outline-none text-white font-mono rounded-xl transition-all duration-300 text-sm"
+                              >
+                                <option value="">Select {col}...</option>
+                                {options.map((opt, optIdx) => (
+                                  <option key={optIdx} value={opt}>{opt}</option>
+                                ))}
+                              </select>
+                              
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  onClick={() => handleInputChange(col, '')}
+                                  className="px-3 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
+                                >
+                                  Reset
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        }
+                        
                         const normalizedValue = Math.min(Math.max(currentValue / 100, 0), 1);
                         
                         return (
@@ -1299,15 +1372,15 @@ const renderStep1 = () => (
                         <p className="text-lg font-bold text-white">{Object.keys(inputData).length}</p>
                       </div>
                       <div className="border border-gray-700 rounded-lg p-2">
-                        <p className="text-xs text-gray-500">Avg Value</p>
+                        <p className="text-xs text-gray-500">Categorical</p>
                         <p className="text-lg font-bold text-amber-500">
-                          {(Object.values(inputData).reduce((a, b) => a + b, 0) / Object.keys(inputData).length).toFixed(1)}
+                          {Object.keys(inputData).filter(col => featureTypes[col] === 'categorical').length}
                         </p>
                       </div>
                       <div className="border border-gray-700 rounded-lg p-2">
-                        <p className="text-xs text-gray-500">Range</p>
+                        <p className="text-xs text-gray-500">Numeric</p>
                         <p className="text-lg font-bold text-white">
-                          {Math.min(...Object.values(inputData)).toFixed(0)} - {Math.max(...Object.values(inputData)).toFixed(0)}
+                          {Object.keys(inputData).filter(col => featureTypes[col] !== 'categorical').length}
                         </p>
                       </div>
                     </div>
@@ -1458,7 +1531,7 @@ const renderStep1 = () => (
                     <div className="mt-6 p-3 bg-gray-800/30 rounded-lg border border-gray-700">
                       <p className="text-xs text-gray-500 flex items-center gap-2">
                         <Sparkles className="w-3 h-3 text-amber-500" />
-                        Tip: Use the sliders to adjust values and see real-time changes
+                        Tip: Use the sliders to adjust numeric values or dropdowns for categorical values
                       </p>
                     </div>
                   </div>
@@ -1473,7 +1546,7 @@ const renderStep1 = () => (
               <div className="border border-gray-700 p-6 rounded-2xl bg-gray-900/30 backdrop-blur-sm">
                 <h3 className="font-mono text-white text-sm mb-4">ABOUT THIS TOOL</h3>
                 <div className="space-y-4 text-sm text-gray-400">
-                  <p>ML Studio is an automated machine learning platform that helps you find the best model for your dataset without writing code.</p>
+                  <p>AutoML is an automated machine learning platform that helps you find the best model for your dataset without writing code.</p>
                   <p>Simply upload your CSV file, select the target column you want to predict, and let our AI do the heavy lifting.</p>
                   <p>The system trains multiple algorithms including Gradient Boosting, Random Forest, SVM, and KNN, then selects the best performer based on cross-validation scores.</p>
                 </div>
