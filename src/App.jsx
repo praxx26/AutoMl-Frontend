@@ -89,6 +89,8 @@ function App() {
   const [currentCarouselIndex, setCurrentCarouselIndex] = useState(0);
   const [particles, setParticles] = useState([]);
   const [downloading, setDownloading] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
 
   // Generate particles for training animation
   useEffect(() => {
@@ -142,16 +144,37 @@ function App() {
     if (!fileToUpload) return;
 
     try {
-      setLoading(true);
+      setUploading(true);
+      setUploadProgress(0);
+      
+      // Simulate upload progress
+      const progressInterval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(progressInterval);
+            return 90;
+          }
+          return prev + 10;
+        });
+      }, 200);
+      
       const formData = new FormData();
       formData.append("file", fileToUpload);
 
       const res = await axios.post(`${API_BASE_URL}/upload`, formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
-      setDatasetId(res.data.dataset_id);
-      setColumns(res.data.columns);
-      setDatasetPreview(res.data.preview || { rows: [], columns: res.data.columns });
+      
+      clearInterval(progressInterval);
+      setUploadProgress(100);
+      
+      setTimeout(() => {
+        setDatasetId(res.data.dataset_id);
+        setColumns(res.data.columns);
+        setDatasetPreview(res.data.preview || { rows: [], columns: res.data.columns });
+        setUploading(false);
+        setUploadProgress(0);
+      }, 500);
       
       // Detect feature types from preview data
       if (res.data.preview && res.data.preview.rows && res.data.preview.rows.length > 0) {
@@ -178,11 +201,10 @@ function App() {
       };
       setHistory(prev => [historyEntry, ...prev].slice(0, 10));
       
-      setLoading(false);
-      
     } catch (err) {
       console.error("UPLOAD ERROR:", err);
-      setLoading(false);
+      setUploading(false);
+      setUploadProgress(0);
       alert("Upload failed: " + (err.response?.data?.message || err.message));
     }
   };
@@ -319,6 +341,24 @@ function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // Format prediction value based on type
+  const formatPrediction = (value) => {
+    if (value === undefined || value === null) return "N/A";
+    
+    // Check if it's a numeric value
+    if (typeof value === 'number') {
+      // Check if it's a binary classification (0 or 1)
+      if (value === 0 || value === 1) {
+        return value === 1 ? "Positive" : "Negative";
+      }
+      // For other numeric values, round to 2 decimal places
+      return value.toFixed(2);
+    }
+    
+    // For string values, return as is
+    return value;
   };
 
   const downloadModel = async () => {
@@ -496,7 +536,7 @@ function App() {
     );
   };
 
-  // Page 1: Upload Page
+  // Page 1: Upload Page with Animated Loading
   const renderStep0 = () => (
     <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
       <div className="relative min-h-[50vh] flex items-center justify-center overflow-hidden">
@@ -546,29 +586,58 @@ function App() {
               )}
             </div>
 
-            {file && (
-              <div className="mt-6 p-4 bg-gray-900/50 border border-gray-700 rounded-lg">
+            {file && uploading && (
+              <div className="mt-6 p-6 bg-gradient-to-r from-gray-900/80 to-black/80 border border-amber-500/30 rounded-xl animate-pulse">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-3">
+                    <Loader2 className="w-5 h-5 text-amber-500 animate-spin" />
+                    <span className="text-amber-500 font-mono text-sm">UPLOADING...</span>
+                  </div>
+                  <span className="text-amber-500 font-mono text-sm">{uploadProgress}%</span>
+                </div>
+                <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+                  <div 
+                    className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-300"
+                    style={{ width: `${uploadProgress}%` }}
+                  />
+                </div>
+                <div className="mt-3 flex justify-center gap-1">
+                  {[...Array(3)].map((_, i) => (
+                    <div 
+                      key={i}
+                      className="w-1 h-1 bg-amber-500 rounded-full animate-bounce"
+                      style={{ animationDelay: `${i * 0.15}s` }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {file && !uploading && (
+              <div className="mt-6 p-4 bg-gradient-to-r from-gray-900/50 to-black/50 border border-gray-700 rounded-lg animate-slideUp">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-3">
-                    <FileSpreadsheet className="w-8 h-8 text-amber-500" />
+                    <div className="relative">
+                      <FileSpreadsheet className="w-8 h-8 text-amber-500" />
+                      <CheckCircle className="w-4 h-4 text-green-500 absolute -top-1 -right-1" />
+                    </div>
                     <div>
                       <p className="font-mono text-white text-sm">{file.name}</p>
                       <p className="text-xs text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
                     </div>
                   </div>
-                  {loading && <Loader2 className="w-5 h-5 text-amber-500 animate-spin" />}
                 </div>
               </div>
             )}
 
             {datasetPreview && (
-              <div className="grid grid-cols-2 gap-4 mt-6">
-                <div className="border border-gray-700 p-4 text-center bg-gradient-to-br from-gray-900/50 to-black rounded-lg">
+              <div className="grid grid-cols-2 gap-4 mt-6 animate-fadeIn">
+                <div className="border border-gray-700 p-4 text-center bg-gradient-to-br from-gray-900/50 to-black rounded-lg hover:border-amber-500/50 transition-all duration-300">
                   <Database className="w-5 h-5 text-amber-500 mx-auto mb-2" />
                   <p className="text-3xl font-bold text-white">{datasetPreview.columns?.length || 0}</p>
                   <p className="text-xs text-gray-500 uppercase tracking-wider">FEATURES</p>
                 </div>
-                <div className="border border-gray-700 p-4 text-center bg-gradient-to-br from-gray-900/50 to-black rounded-lg">
+                <div className="border border-gray-700 p-4 text-center bg-gradient-to-br from-gray-900/50 to-black rounded-lg hover:border-amber-500/50 transition-all duration-300">
                   <BarChart3 className="w-5 h-5 text-amber-500 mx-auto mb-2" />
                   <p className="text-3xl font-bold text-white">{datasetPreview.rows?.length || 0}</p>
                   <p className="text-xs text-gray-500 uppercase tracking-wider">SAMPLES</p>
@@ -610,17 +679,29 @@ function App() {
                 </table>
               ) : (
                 <div className="text-center py-16">
-                  <Database className="w-12 h-12 mx-auto mb-3 text-gray-700" />
-                  <p className="text-gray-500">No dataset loaded</p>
-                  <p className="text-gray-600 text-xs mt-1">Upload a CSV file to see preview</p>
+                  {uploading ? (
+                    <>
+                      <div className="relative w-16 h-16 mx-auto mb-4">
+                        <div className="absolute inset-0 rounded-full border-2 border-amber-500/30 animate-ping" />
+                        <div className="absolute inset-0 rounded-full border-2 border-amber-500 border-t-transparent animate-spin" />
+                      </div>
+                      <p className="text-amber-500 mt-2">Loading dataset...</p>
+                    </>
+                  ) : (
+                    <>
+                      <Database className="w-12 h-12 mx-auto mb-3 text-gray-700" />
+                      <p className="text-gray-500">No dataset loaded</p>
+                      <p className="text-gray-600 text-xs mt-1">Upload a CSV file to see preview</p>
+                    </>
+                  )}
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {columns.length > 0 && (
-          <div className="mt-12 flex justify-center">
+        {columns.length > 0 && !uploading && (
+          <div className="mt-12 flex justify-center animate-fadeIn">
             <button
               onClick={goToNext}
               className="group px-12 py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider hover:shadow-2xl hover:shadow-amber-500/30 transition-all duration-300 flex items-center gap-3 transform hover:scale-105"
@@ -634,9 +715,9 @@ function App() {
 
       <button
         onClick={() => setShowHistory(true)}
-        className="fixed bottom-6 right-6 border border-gray-700 p-3 hover:border-amber-500 transition-all duration-300 hover:shadow-lg hover:shadow-amber-500/20 bg-gray-900/50 backdrop-blur-sm rounded-full group"
+        className="fixed bottom-6 right-6 bg-gradient-to-r from-gray-800 to-gray-900 border border-amber-500/30 p-3 hover:border-amber-500 hover:shadow-lg hover:shadow-amber-500/20 transition-all duration-300 rounded-full group"
       >
-        <History className="w-5 h-5 text-gray-500 group-hover:text-amber-500 transition" />
+        <History className="w-5 h-5 text-amber-500 group-hover:text-amber-400 transition" />
       </button>
 
       {showHistory && (
@@ -681,7 +762,7 @@ function App() {
           </button>
           <button
             onClick={resetToHome}
-            className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-4 md:px-5 py-2 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm"
+            className="flex items-center gap-2 bg-gradient-to-r from-gray-800 to-gray-900 text-amber-500 hover:text-amber-400 transition-all duration-300 border border-amber-500/30 px-4 md:px-5 py-2 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm font-medium"
           >
             <Home className="w-4 h-4" />
             <span>HOME</span>
@@ -929,7 +1010,7 @@ function App() {
               </button>
               <button
                 onClick={resetToHome}
-                className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-5 py-2.5 rounded-lg hover:border-amber-500 hover:bg-gray-800/50"
+                className="flex items-center gap-2 bg-gradient-to-r from-gray-800 to-gray-900 text-amber-500 hover:text-amber-400 transition-all duration-300 border border-amber-500/30 px-5 py-2.5 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm font-medium"
               >
                 <Home className="w-4 h-4" />
                 <span className="text-sm">HOME</span>
@@ -966,7 +1047,7 @@ function App() {
             </button>
             <button
               onClick={resetToHome}
-              className="flex items-center gap-2 text-gray-500 hover:text-white transition-all duration-300 border border-gray-700 px-5 py-2.5 rounded-lg hover:border-amber-500 hover:bg-gray-800/50"
+              className="flex items-center gap-2 bg-gradient-to-r from-gray-800 to-gray-900 text-amber-500 hover:text-amber-400 transition-all duration-300 border border-amber-500/30 px-5 py-2.5 rounded-lg hover:border-amber-500 hover:bg-gray-800/50 text-sm font-medium"
             >
               <Home className="w-4 h-4" />
               <span className="text-sm">HOME</span>
@@ -1427,9 +1508,9 @@ function App() {
                         PREDICTION RESULT
                       </h3>
                       
-                      {/* Main Prediction Value */}
-                      <p className="text-6xl md:text-7xl font-black bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 bg-clip-text text-transparent mb-4">
-                        {typeof prediction.prediction === 'number' ? prediction.prediction.toFixed(2) : prediction.prediction}
+                      {/* Main Prediction Value - Formatted */}
+                      <p className="text-5xl md:text-6xl font-black bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 bg-clip-text text-transparent mb-4 break-words text-center">
+                        {formatPrediction(prediction.prediction)}
                       </p>
                       
                       {/* Confidence Score */}
@@ -1469,7 +1550,9 @@ function App() {
                         <div className="flex items-start gap-2">
                           <Lightbulb className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
                           <p className="text-xs text-gray-400">
-                            {typeof prediction.prediction === 'number' 
+                            {typeof prediction.prediction === 'number' && (prediction.prediction === 0 || prediction.prediction === 1)
+                              ? `Based on the input values, the model predicts "${prediction.prediction === 1 ? 'Positive' : 'Negative'}" with ${(prediction.confidence * 100).toFixed(1)}% confidence.`
+                              : typeof prediction.prediction === 'number'
                               ? `This prediction is based on ${features.length} input features with ${bestModel} algorithm.`
                               : `Based on the input values, the model predicts "${prediction.prediction}" with high confidence.`}
                           </p>
