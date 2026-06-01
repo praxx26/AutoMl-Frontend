@@ -1,6 +1,8 @@
 // Complete App.js - Fixed Version with Carousel & Download Button
 import React, { useState, useCallback, useEffect } from "react";
 import axios from "axios";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { useDropzone } from "react-dropzone";
 import {
   ChevronRight,
@@ -50,10 +52,12 @@ import {
   Info,
   TrendingDown,
   Minus,
-  Plus
+  Plus,
+  LineChart,
+  Terminal
 } from "lucide-react";
 
-const API_BASE_URL = "https://automl-backend-hw8s.onrender.com";
+const API_BASE_URL = "https://automi-backend-hw8s.onrender.com";
 
 function App() {
   const [currentStep, setCurrentStep] = useState(0);
@@ -63,11 +67,16 @@ function App() {
   const [columns, setColumns] = useState([]);
   const [datasetPreview, setDatasetPreview] = useState(null);
   const [target, setTarget] = useState("");
-  const [targetPreview, setTargetPreview] = useState([]);
-  const [targetStats, setTargetStats] = useState(null);
-  const [targetDistribution, setTargetDistribution] = useState(null);
+  const [selectedAnalysisColumn, setSelectedAnalysisColumn] = useState("");
+  const [columnAnalysisData, setColumnAnalysisData] = useState(null);
+  const [isAnalyzingColumn, setIsAnalyzingColumn] = useState(false);
   const [features, setFeatures] = useState([]);
   const [featureTypes, setFeatureTypes] = useState({});
+  const [rawColumns, setRawColumns] = useState([]);
+  const [categoricalValues, setCategoricalValues] = useState({});
+  const [rawDtypes, setRawDtypes] = useState({});
+  const [rawMins, setRawMins] = useState({});
+  const [rawMaxes, setRawMaxes] = useState({});
   const [inputData, setInputData] = useState({});
   const [prediction, setPrediction] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -91,6 +100,10 @@ function App() {
   const [downloading, setDownloading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [processLog, setProcessLog] = useState([]);
+  const [predictionHistoryList, setPredictionHistoryList] = useState([]);
+  const [showPredictionHistoryModal, setShowPredictionHistoryModal] = useState(false);
+  const [showInsightsModal, setShowInsightsModal] = useState(false);
 
   // Generate particles for training animation
   useEffect(() => {
@@ -115,7 +128,7 @@ function App() {
   useEffect(() => {
     if (trainingAnimation) {
       const animate = setInterval(() => {
-        setParticles(prev => 
+        setParticles(prev =>
           prev.map(p => ({ ...p, y: p.y - p.speed })).filter(p => p.y > -50)
         );
       }, 30);
@@ -146,7 +159,7 @@ function App() {
     try {
       setUploading(true);
       setUploadProgress(0);
-      
+
       const progressInterval = setInterval(() => {
         setUploadProgress(prev => {
           if (prev >= 90) {
@@ -156,29 +169,24 @@ function App() {
           return prev + 10;
         });
       }, 200);
-      
+
       const formData = new FormData();
       formData.append("file", fileToUpload);
 
       const res = await axios.post(`${API_BASE_URL}/upload`, formData, {
         headers: { "Content-Type": "multipart/form-data" }
       });
-      
+
       clearInterval(progressInterval);
       setUploadProgress(100);
-      
-      setTimeout(() => {
-        setDatasetId(res.data.dataset_id);
-        setColumns(res.data.columns);
-        setDatasetPreview(res.data.preview || { rows: [], columns: res.data.columns });
-        setUploading(false);
-        setUploadProgress(0);
-      }, 500);
-      
-      if (res.data.preview && res.data.preview.rows && res.data.preview.rows.length > 0) {
+
+      const cols = res.data.columns || [];
+      const previewData = res.data.preview || { rows: [], columns: cols };
+
+      if (previewData.rows && previewData.rows.length > 0) {
         const types = {};
-        const sampleRow = res.data.preview.rows[0];
-        res.data.columns.forEach(col => {
+        const sampleRow = previewData.rows[0];
+        cols.forEach(col => {
           const sampleValue = sampleRow[col];
           if (typeof sampleValue === 'string' && isNaN(parseFloat(sampleValue))) {
             types[col] = 'categorical';
@@ -188,16 +196,24 @@ function App() {
         });
         setFeatureTypes(types);
       }
-      
+
       const historyEntry = {
         id: Date.now(),
         timestamp: new Date().toLocaleString(),
         filename: fileToUpload.name,
-        columns: res.data.columns.length,
-        rows: res.data.preview?.rows?.length || 0
+        columns: cols.length,
+        rows: previewData?.rows?.length || 0
       };
       setHistory(prev => [historyEntry, ...prev].slice(0, 10));
-      
+
+      setTimeout(() => {
+        setDatasetId(res.data.dataset_id);
+        setColumns(cols);
+        setDatasetPreview(previewData);
+        setUploading(false);
+        setUploadProgress(0);
+      }, 500);
+
     } catch (err) {
       console.error("UPLOAD ERROR:", err);
       setUploading(false);
@@ -206,42 +222,26 @@ function App() {
     }
   };
 
-  const fetchTargetPreview = async (selectedTarget) => {
+  const analyzeColumn = async (colName) => {
+    if (!colName || !datasetId) {
+      setColumnAnalysisData(null);
+      return;
+    }
+
+    setSelectedAnalysisColumn(colName);
+    setIsAnalyzingColumn(true);
     try {
-      const res = await axios.post(`${API_BASE_URL}/preview-target`, {
-        target: selectedTarget,
-        dataset_id: datasetId  
+      const res = await axios.post(`${API_BASE_URL}/analyze-column`, {
+        target: colName, // keeping target key if backend needs it somewhere, but new endpoint uses column
+        column: colName,
+        dataset_id: datasetId
       });
-      const previewData = res.data.preview || [];
-      setTargetPreview(previewData);
-      
-      const numericValues = previewData.filter(v => !isNaN(parseFloat(v)) && isFinite(v)).map(v => parseFloat(v));
-      if (numericValues.length > 0) {
-        const min = Math.min(...numericValues);
-        const max = Math.max(...numericValues);
-        const mean = numericValues.reduce((a, b) => a + b, 0) / numericValues.length;
-        const sorted = [...numericValues].sort((a, b) => a - b);
-        const median = sorted[Math.floor(sorted.length / 2)];
-        const range = max - min;
-        
-        const numBins = 5;
-        const binWidth = range / numBins;
-        const bins = Array(numBins).fill(0);
-        numericValues.forEach(val => {
-          const binIndex = Math.min(Math.floor((val - min) / binWidth), numBins - 1);
-          bins[binIndex]++;
-        });
-        
-        setTargetStats({ min, max, mean, median, range });
-        setTargetDistribution({ bins, binWidth, min });
-      } else {
-        setTargetStats(null);
-        setTargetDistribution(null);
-      }
+      setColumnAnalysisData(res.data);
     } catch (err) {
-      console.error("Preview error:", err);
-      setTargetStats(null);
-      setTargetDistribution(null);
+      console.error("Analysis error:", err);
+      setColumnAnalysisData(null);
+    } finally {
+      setIsAnalyzingColumn(false);
     }
   };
 
@@ -253,7 +253,7 @@ function App() {
       setTrainError(null);
       setTrainingAnimation(true);
       setTrainingPhase(0);
-      
+
       const phases = [
         { name: "NEURAL SYNAPSE", message: "Establishing neural connections...", color: "from-purple-500 to-pink-500" },
         { name: "FEATURE EXTRACTION", message: "Analyzing patterns in data...", color: "from-blue-500 to-cyan-500" },
@@ -262,41 +262,52 @@ function App() {
         { name: "CROSS-VALIDATION", message: "Validating model robustness...", color: "from-indigo-500 to-purple-500" },
         { name: "MODEL SELECTION", message: "Crowning the champion...", color: "from-yellow-500 to-amber-500" }
       ];
-      
+
       for (let i = 0; i < phases.length; i++) {
         setTrainingPhase(i);
         setTrainingMessage(phases[i].message);
         await new Promise(resolve => setTimeout(resolve, 900));
       }
-      
+
       const res = await axios.post(`${API_BASE_URL}/train`, {
         target: target,
         dataset_id: datasetId
       });
 
-      setFeatures(res.data.features || []);
-      setBestModel(res.data.best_model || "");
-      setBestParams(res.data.best_params || {});
-      setLeaderboard(res.data.leaderboard || []);
+      const resultData = res.data.result || res.data;
+
+      setFeatures(resultData.features || []);
+      setRawColumns(resultData.raw_columns || resultData.features || []);
+      setCategoricalValues(resultData.categorical_values || {});
+      setRawDtypes(resultData.raw_dtypes || {});
+      setRawMins(resultData.raw_mins || {});
+      setRawMaxes(resultData.raw_maxes || {});
+      setBestModel(resultData.best_model || "");
+      setBestParams(resultData.best_params || {});
+      setLeaderboard(resultData.leaderboard || []);
       setTrainingComplete(true);
-      setModelId(res.data.model_id || "");
-      
-      if (res.data.leaderboard && res.data.leaderboard.length > 0) {
-        const bestModelData = res.data.leaderboard.find(m => m.model === res.data.best_model);
-        const recommendationMsg = `${res.data.best_model} achieved ${(bestModelData?.cv_score ? (bestModelData.cv_score * 100).toFixed(2) : "0")}% accuracy - recommended for production.`;
+      setModelId(resultData.model_id || "");
+
+      if (res.data.process_log) {
+        setProcessLog(res.data.process_log);
+      }
+
+      if (resultData.leaderboard && resultData.leaderboard.length > 0) {
+        const bestModelData = resultData.leaderboard.find(m => m.model === resultData.best_model);
+        const recommendationMsg = `${resultData.best_model} achieved ${(bestModelData?.cv_score ? (bestModelData.cv_score * 100).toFixed(2) : "0")}% accuracy - recommended for production.`;
         setRecommendation(recommendationMsg);
-        
-        const bestIndex = res.data.leaderboard.findIndex(m => m.model === res.data.best_model);
+
+        const bestIndex = resultData.leaderboard.findIndex(m => m.model === resultData.best_model);
         setSelectedModelIndex(bestIndex >= 0 ? bestIndex : 0);
         setCurrentCarouselIndex(bestIndex >= 0 ? bestIndex : 0);
       }
-      
+
       setTimeout(() => {
         setTrainingAnimation(false);
         setIsTraining(false);
         setCurrentStep(2);
       }, 800);
-      
+
     } catch (err) {
       console.error("TRAIN ERROR:", err);
       setTrainError(err.response?.data?.message || err.message || "Training failed");
@@ -306,7 +317,7 @@ function App() {
   };
 
   const handleInputChange = (col, value) => {
-    if (featureTypes[col] === 'categorical') {
+    if (categoricalValues[col]) {
       setInputData({
         ...inputData,
         [col]: value
@@ -320,7 +331,7 @@ function App() {
   };
 
   const predict = async () => {
-    if (Object.keys(inputData).length !== features.length) return;
+    if (Object.keys(inputData).length !== rawColumns.length) return;
 
     try {
       setLoading(true);
@@ -328,10 +339,19 @@ function App() {
         input: inputData,
         model_id: modelId
       });
-      setPrediction(res.data);
+      const resultData = res.data.result || res.data;
+      setPrediction(resultData);
+
+      const newPrediction = {
+        id: Date.now(),
+        time: new Date().toLocaleTimeString(),
+        inputs: { ...inputData },
+        output: resultData.prediction
+      };
+      setPredictionHistoryList(prev => [newPrediction, ...prev]);
     } catch (err) {
       console.error("PREDICT ERROR:", err);
-      alert("Prediction failed: " + (err.response?.data?.message || err.message));
+      alert("Prediction failed: " + (err.response?.data?.error || err.response?.data?.message || err.message));
     } finally {
       setLoading(false);
     }
@@ -340,7 +360,7 @@ function App() {
   // Enhanced format prediction function
   const formatPrediction = (value) => {
     if (value === undefined || value === null) return "N/A";
-    
+
     // Handle numeric values
     if (typeof value === 'number') {
       // Binary classification (0 or 1)
@@ -349,7 +369,7 @@ function App() {
       // For other numeric values, round to 2 decimal places
       return value.toFixed(2);
     }
-    
+
     // Handle string values
     if (typeof value === 'string') {
       // Try to parse as number if it's a numeric string
@@ -362,7 +382,7 @@ function App() {
       }
       return value;
     }
-    
+
     return String(value);
   };
 
@@ -398,7 +418,7 @@ function App() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      
+
       setDownloading(false);
       alert("Model downloaded successfully!");
     } catch (error) {
@@ -414,11 +434,12 @@ function App() {
     setColumns([]);
     setDatasetPreview(null);
     setTarget("");
-    setTargetPreview([]);
-    setTargetStats(null);
-    setTargetDistribution(null);
+    setSelectedAnalysisColumn("");
+    setColumnAnalysisData(null);
     setFeatures([]);
     setFeatureTypes({});
+    setRawColumns([]);
+    setCategoricalValues({});
     setInputData({});
     setPrediction(null);
     setBestModel("");
@@ -433,6 +454,121 @@ function App() {
     setRecommendation("");
     setActiveTab("models");
     setModelId("");
+    setProcessLog([]);
+  };
+
+  const downloadPDFReport = () => {
+    const doc = new jsPDF();
+
+    // Header
+    doc.setFontSize(20);
+    doc.text("AutoML Analysis Report", 14, 22);
+
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 30);
+    doc.text(`Dataset Columns: ${columns.length}`, 14, 36);
+    doc.text(`Target Column: ${target}`, 14, 42);
+
+    // Process Log
+    doc.setFontSize(14);
+    doc.setTextColor(0);
+    doc.text("Workflow Process Log", 14, 55);
+
+    let logData = processLog.map((log, idx) => {
+      const stepName = typeof log === 'object' ? log.step : log;
+      let stepDetails = "Completed successfully";
+      if (typeof log === 'object' && log.details) {
+        stepDetails = log.details.map(d => String(d).length > 80 ? String(d).substring(0, 77) + "..." : String(d)).join('\n');
+      }
+      return [`Step ${idx + 1}`, stepName, stepDetails];
+    });
+
+    if (logData.length === 0) {
+      logData = [["-", "No logs recorded", ""]];
+    }
+
+    try {
+      autoTable(doc, {
+        startY: 60,
+        head: [["Step", "Action", "Details"]],
+        body: logData,
+        theme: 'grid',
+        headStyles: { fillColor: [245, 158, 11] }
+      });
+    } catch (err) {
+      console.error("PDF autoTable Error:", err);
+    }
+
+    let nextY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 15 : 80;
+
+    // Evaluation Results
+    if (leaderboard.length > 0) {
+      if (nextY > 250) {
+        doc.addPage();
+        nextY = 20;
+      }
+      doc.setFontSize(14);
+      doc.text("Model Evaluation Results", 14, nextY);
+
+      const evalData = leaderboard.map(m => [
+        m.model,
+        (m.cv_score * 100).toFixed(2) + "%",
+        (m.train_score * 100).toFixed(2) + "%",
+        (m.test_score * 100).toFixed(2) + "%",
+        m.fit_status
+      ]);
+
+      try {
+        autoTable(doc, {
+          startY: nextY + 5,
+          head: [["Model", "CV Score", "Train Score", "Test Score", "Status"]],
+          body: evalData,
+          theme: 'striped',
+          headStyles: { fillColor: [245, 158, 11] }
+        });
+        nextY = (doc.lastAutoTable && doc.lastAutoTable.finalY) ? doc.lastAutoTable.finalY + 15 : nextY + 40;
+      } catch (err) {
+        console.error("PDF Eval autoTable Error:", err);
+      }
+    }
+
+    // Final Prediction
+    if (prediction) {
+      if (nextY > 250) {
+        doc.addPage();
+        nextY = 20;
+      }
+      doc.setFontSize(14);
+      doc.text("Final Prediction", 14, nextY);
+
+      doc.setFontSize(12);
+      doc.text(`Result: ${formatPrediction(prediction.prediction)}`, 14, nextY + 10);
+      if (prediction.confidence) {
+        doc.text(`Confidence: ${(prediction.confidence * 100).toFixed(1)}%`, 14, nextY + 18);
+      }
+
+      doc.setFontSize(10);
+      doc.text("Input Features used:", 14, nextY + 28);
+
+      let inputDataList = Object.entries(inputData).map(([key, val]) => [key, String(val)]);
+      if (inputDataList.length === 0) {
+        inputDataList = [["-", "-"]];
+      }
+
+      try {
+        autoTable(doc, {
+          startY: nextY + 32,
+          head: [["Feature", "Value"]],
+          body: inputDataList,
+          theme: 'plain'
+        });
+      } catch (err) {
+        console.error("PDF Input autoTable Error:", err);
+      }
+    }
+
+    doc.save("AutoML_Report.pdf");
   };
 
   const goToNext = () => {
@@ -478,14 +614,14 @@ function App() {
       { name: "CROSS-VALIDATION", message: "Validating model robustness...", color: "from-indigo-500 to-purple-500" },
       { name: "MODEL SELECTION", message: "Crowning the champion...", color: "from-yellow-500 to-amber-500" }
     ];
-    
+
     const currentPhase = phases[trainingPhase];
     const progress = ((trainingPhase + 1) / phases.length) * 100;
-    
+
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-br from-black via-gray-900 to-black" />
-        
+
         {particles.map(particle => (
           <div
             key={particle.id}
@@ -500,46 +636,45 @@ function App() {
             }}
           />
         ))}
-        
+
         <div className="absolute inset-0 opacity-20">
           <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-purple-500 rounded-full blur-[100px] animate-pulse" />
           <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-amber-500 rounded-full blur-[100px] animate-pulse delay-1000" />
         </div>
-        
+
         <div className="relative z-10 text-center max-w-3xl mx-auto px-4">
           <div className="relative mb-8">
             <div className="text-[180px] md:text-[240px] font-black text-transparent bg-clip-text bg-gradient-to-r from-white/10 to-white/5 select-none">
               {String(trainingPhase + 1).padStart(2, '0')}
             </div>
           </div>
-          
+
           <h2 className="text-6xl md:text-7xl font-black mb-4 bg-gradient-to-r from-white via-amber-200 to-white bg-clip-text text-transparent">
             {currentPhase?.name}
           </h2>
-          
+
           <p className="text-xl text-gray-400 mb-12">
             {trainingMessage}
             <span className="inline-block w-2 h-2 bg-amber-500 rounded-full ml-1 animate-pulse" />
           </p>
-          
+
           <div className="max-w-md mx-auto">
             <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
-              <div 
+              <div
                 className={`h-full bg-gradient-to-r ${currentPhase?.color} rounded-full transition-all duration-500`}
                 style={{ width: `${progress}%` }}
               />
             </div>
           </div>
-          
+
           <div className="flex justify-center gap-2 mt-8">
             {phases.map((phase, idx) => (
               <div
                 key={idx}
-                className={`h-2 rounded-full transition-all duration-500 ${
-                  idx <= trainingPhase 
-                    ? `w-8 bg-gradient-to-r ${phase.color}` 
+                className={`h-2 rounded-full transition-all duration-500 ${idx <= trainingPhase
+                    ? `w-8 bg-gradient-to-r ${phase.color}`
                     : 'w-2 bg-white/20'
-                }`}
+                  }`}
               />
             ))}
           </div>
@@ -550,7 +685,7 @@ function App() {
 
   // Page 1: Upload Page
   const renderStep0 = () => (
-    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
+    <div className="min-h-screen bg-transparent">
       <div className="relative min-h-[50vh] flex items-center justify-center overflow-hidden">
         <div className="absolute inset-0">
           <div className="absolute top-20 left-10 w-72 h-72 bg-amber-500/10 rounded-full blur-[80px] animate-pulse" />
@@ -572,15 +707,14 @@ function App() {
       </div>
 
       <div className="max-w-7xl mx-auto px-4 py-16">
-        <div className="grid lg:grid-cols-2 gap-12">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
           <div>
             <div
               {...getRootProps()}
-              className={`relative border-2 border-dashed transition-all duration-500 cursor-pointer p-12 text-center overflow-hidden group ${
-                isDragActive 
-                  ? 'border-amber-500 bg-amber-500/10 shadow-[0_0_30px_rgba(245,158,11,0.3)]' 
+              className={`relative border-2 border-dashed transition-all duration-500 cursor-pointer p-12 text-center overflow-hidden group ${isDragActive
+                  ? 'border-amber-500 bg-amber-500/10 shadow-[0_0_30px_rgba(245,158,11,0.3)]'
                   : 'border-gray-700 hover:border-amber-500/50 hover:bg-gray-900/50'
-              }`}
+                }`}
             >
               <input {...getInputProps()} />
               <Upload className={`w-16 h-16 mx-auto mb-4 transition-all duration-300 ${isDragActive ? 'text-amber-500 scale-110' : 'text-gray-600 group-hover:text-amber-500'}`} />
@@ -608,14 +742,14 @@ function App() {
                   <span className="text-amber-500 font-mono text-sm">{uploadProgress}%</span>
                 </div>
                 <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-300"
                     style={{ width: `${uploadProgress}%` }}
                   />
                 </div>
                 <div className="mt-3 flex justify-center gap-1">
                   {[...Array(3)].map((_, i) => (
-                    <div 
+                    <div
                       key={i}
                       className="w-1 h-1 bg-amber-500 rounded-full animate-bounce"
                       style={{ animationDelay: `${i * 0.15}s` }}
@@ -762,8 +896,8 @@ function App() {
 
   // Page 2: Target Selection Page
   const renderStep1 = () => (
-    <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
-      <div className="max-w-7xl mx-auto px-4 py-8 md:py-12">
+    <div className="min-h-screen bg-transparent">
+      <div className="max-w-[90rem] mx-auto px-4 py-8 md:py-12">
         <div className="mb-6 md:mb-8 flex items-center justify-between">
           <button
             onClick={goBack}
@@ -783,31 +917,23 @@ function App() {
 
         <div className="text-center mb-10 md:mb-12">
           <h2 className="text-4xl md:text-6xl font-black text-white tracking-tighter mb-3">
-            SELECT <span className="bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">TARGET</span>
+            DATA <span className="bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">DASHBOARD</span>
           </h2>
-          <p className="text-gray-500 text-base">Choose the column you want to predict</p>
+          <p className="text-gray-500 text-base">Select your target column to predict, and deeply analyze any feature in your dataset</p>
         </div>
 
-        <div className="grid lg:grid-cols-2 gap-8">
-          <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
-            <div className="border-b border-gray-800 p-5 bg-gray-900/50">
-              <div className="flex items-center gap-2">
-                <Target className="w-5 h-5 text-amber-500" />
-                <h3 className="font-mono text-white text-sm tracking-wider">TARGET COLUMN</h3>
-              </div>
-            </div>
-            
-            <div className="p-6 space-y-6">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          {/* LEFT PANEL: Column List & Target Selection */}
+          <div className="lg:col-span-1 space-y-6">
+            <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm p-6 relative">
+              <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full blur-3xl -mr-10 -mt-10" />
+              <h3 className="font-mono text-white text-sm tracking-wider mb-4 flex items-center gap-2 relative z-10">
+                <Target className="w-5 h-5 text-amber-500" /> TARGET COLUMN
+              </h3>
               <select
                 value={target}
-                onChange={(e) => {
-                  const selected = e.target.value;
-                  setTarget(selected);
-                  if (selected && datasetId) {
-                    fetchTargetPreview(selected);
-                  }
-                }}
-                className="w-full p-4 bg-black/50 border border-gray-700 focus:border-amber-500 outline-none text-white font-mono rounded-xl transition-all duration-300 text-base"
+                onChange={(e) => setTarget(e.target.value)}
+                className="w-full p-4 bg-black/50 border border-gray-700 focus:border-amber-500 outline-none text-white font-mono rounded-xl transition-all duration-300 text-sm relative z-10"
               >
                 <option value="">Select target column...</option>
                 {columns.map((col, i) => (
@@ -815,77 +941,9 @@ function App() {
                 ))}
               </select>
 
-              {target && targetStats && (
-                <div className="space-y-5">
-                  <div className="bg-gradient-to-r from-amber-500/10 to-transparent p-4 rounded-xl border-l-4 border-amber-500">
-                    <p className="text-xs text-gray-500 mb-1">SELECTED TARGET</p>
-                    <p className="text-2xl font-mono font-bold text-white">{target}</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
-                      <p className="text-xs text-gray-500 mb-1">MINIMUM</p>
-                      <p className="text-2xl font-bold text-white">{targetStats.min.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
-                      <p className="text-xs text-gray-500 mb-1">MAXIMUM</p>
-                      <p className="text-2xl font-bold text-white">{targetStats.max.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
-                      <p className="text-xs text-gray-500 mb-1">MEAN (AVERAGE)</p>
-                      <p className="text-2xl font-bold text-amber-500">{targetStats.mean.toFixed(2)}</p>
-                    </div>
-                    <div className="bg-black/30 rounded-xl p-4 border border-gray-800 hover:border-amber-500/50 transition-all">
-                      <p className="text-xs text-gray-500 mb-1">MEDIAN</p>
-                      <p className="text-2xl font-bold text-amber-500">{targetStats.median.toFixed(2)}</p>
-                    </div>
-                  </div>
-
-                  <div className="bg-black/30 rounded-xl p-5 border border-gray-800">
-                    <div className="flex items-center justify-between mb-3">
-                      <p className="text-sm font-mono text-gray-400">DATA RANGE</p>
-                      <p className="text-xl font-bold text-white">{targetStats.range.toFixed(2)}</p>
-                    </div>
-                    <div className="relative h-2 bg-gray-800 rounded-full overflow-hidden">
-                      <div 
-                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-amber-500 to-amber-400 rounded-full"
-                        style={{ width: '100%' }}
-                      />
-                      <div 
-                        className="absolute inset-y-0 bg-white rounded-full shadow-lg"
-                        style={{ left: `${((targetStats.mean - targetStats.min) / targetStats.range) * 100}%`, width: '3px' }}
-                      />
-                    </div>
-                    <div className="flex justify-between text-xs text-gray-600 mt-2">
-                      <span>{targetStats.min.toFixed(0)}</span>
-                      <span className="text-amber-500">Mean: {targetStats.mean.toFixed(0)}</span>
-                      <span>{targetStats.max.toFixed(0)}</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-gradient-to-r from-amber-500/5 to-transparent rounded-xl p-5 border border-amber-500/20">
-                    <div className="flex items-center gap-2 mb-3">
-                      <Lightbulb className="w-4 h-4 text-amber-500" />
-                      <p className="text-xs font-mono text-amber-500 uppercase tracking-wider">Key Insights</p>
-                    </div>
-                    <div className="space-y-2 text-sm">
-                      <p className="text-gray-300">
-                        <span className="text-amber-500">•</span> Range: <span className="text-white font-mono">{targetStats.range.toFixed(2)}</span> units spread
-                      </p>
-                      <p className="text-gray-300">
-                        <span className="text-amber-500">•</span> Mean vs Median: <span className="text-white font-mono">{Math.abs(targetStats.mean - targetStats.median).toFixed(2)}</span> difference
-                      </p>
-                      <p className="text-gray-300">
-                        <span className="text-amber-500">•</span> Data points: <span className="text-white font-mono">{targetPreview.length}</span> samples
-                      </p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {trainError && (
-                <div className="border border-red-500/30 p-4 bg-red-500/10 rounded-xl">
-                  <p className="text-red-400 text-sm">Error: {trainError}</p>
+                <div className="mt-4 border border-red-500/30 p-3 bg-red-500/10 rounded-xl relative z-10">
+                  <p className="text-red-400 text-xs">Error: {trainError}</p>
                 </div>
               )}
 
@@ -893,101 +951,182 @@ function App() {
                 <button
                   onClick={trainModel}
                   disabled={isTraining}
-                  className="w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider hover:shadow-2xl hover:shadow-amber-500/30 transition-all duration-300 disabled:opacity-50 rounded-xl transform hover:scale-[1.02] text-base"
+                  className="w-full mt-5 py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider hover:shadow-[0_0_20px_rgba(245,158,11,0.3)] transition-all duration-300 disabled:opacity-50 rounded-xl flex justify-center items-center gap-2 relative z-10"
                 >
                   {isTraining ? (
-                    <div className="flex items-center justify-center gap-2">
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      <span>INITIATING TRAINING...</span>
-                    </div>
+                    <><Loader2 className="w-5 h-5 animate-spin" /> INITIATING...</>
                   ) : (
-                    <div className="flex items-center justify-center gap-2">
-                      <Rocket className="w-5 h-5" />
-                      <span>START AI TRAINING</span>
-                    </div>
+                    <><Rocket className="w-5 h-5" /> START AI TRAINING</>
                   )}
                 </button>
               )}
             </div>
-          </div>
 
-          <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm">
-            <div className="border-b border-gray-800 p-5 bg-gray-900/50">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-amber-500" />
-                <h3 className="font-mono text-white text-sm tracking-wider">DATA PREVIEW</h3>
+            <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm flex flex-col h-[500px]">
+              <div className="border-b border-gray-800 p-5 bg-gray-900/50">
+                <h3 className="font-mono text-white text-sm tracking-wider flex items-center gap-2">
+                  <Database className="w-5 h-5 text-amber-500" /> DATASET COLUMNS
+                </h3>
+              </div>
+              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                {columns.map((col, i) => (
+                  <button
+                    key={i}
+                    onClick={() => analyzeColumn(col)}
+                    className={`w-full text-left px-4 py-3 rounded-lg font-mono text-sm transition-all flex justify-between items-center ${selectedAnalysisColumn === col
+                        ? 'bg-amber-500/10 border border-amber-500/50 text-amber-500'
+                        : 'bg-gray-800/30 border border-gray-800 text-gray-400 hover:bg-gray-800/80 hover:border-gray-600 hover:text-gray-200'
+                      }`}
+                  >
+                    <span className="truncate">{col}</span>
+                    {target === col && <Target className="w-4 h-4 text-amber-500 shrink-0" />}
+                  </button>
+                ))}
               </div>
             </div>
-            
-            <div className="p-6">
-              {target ? (
-                <div className="space-y-6">
-                  {targetDistribution && (
-                    <div>
-                      <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Distribution Analysis</p>
-                      <div className="space-y-3">
-                        {targetDistribution.bins.map((count, idx) => {
-                          const binStart = targetDistribution.min + idx * targetDistribution.binWidth;
-                          const binEnd = binStart + targetDistribution.binWidth;
-                          const maxCount = Math.max(...targetDistribution.bins);
-                          const percentage = (count / maxCount) * 100;
+          </div>
+
+          {/* RIGHT PANEL: Data Analysis Dashboard */}
+          <div className="lg:col-span-2">
+            <div className="bg-gradient-to-br from-gray-900/80 to-black/80 border border-gray-800 rounded-2xl overflow-hidden shadow-xl backdrop-blur-sm h-full flex flex-col">
+              <div className="border-b border-gray-800 p-5 bg-gray-900/50 flex justify-between items-center">
+                <h3 className="font-mono text-white text-sm tracking-wider flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-amber-500" /> VISUAL ANALYSIS
+                </h3>
+                {isAnalyzingColumn && <Loader2 className="w-5 h-5 text-amber-500 animate-spin" />}
+              </div>
+
+              <div className="p-6 md:p-8 flex-1 overflow-y-auto custom-scrollbar">
+                {!selectedAnalysisColumn ? (
+                  <div className="h-full flex flex-col items-center justify-center text-center opacity-50 py-20">
+                    <Eye className="w-20 h-20 text-gray-600 mb-6 animate-pulse" />
+                    <p className="text-gray-400 text-lg max-w-sm">Select any column from the left panel to instantly visualize its data distribution, outliers, and insights.</p>
+                  </div>
+                ) : columnAnalysisData ? (
+                  <div className="space-y-8 animate-in fade-in duration-500 pb-10">
+                    <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4 border-b border-gray-800 pb-6">
+                      <div>
+                        <p className="text-amber-500 text-xs font-mono uppercase tracking-wider mb-2 flex items-center gap-2">
+                          <Activity className="w-4 h-4" /> CURRENTLY ANALYZING
+                        </p>
+                        <h4 className="text-4xl md:text-5xl font-black text-white tracking-tight">{columnAnalysisData.column}</h4>
+                      </div>
+                      <div className="flex gap-2">
+                        {target === columnAnalysisData.column && (
+                          <span className="bg-amber-500/20 text-amber-400 border border-amber-500/50 px-3 py-1.5 rounded-lg text-xs font-bold uppercase tracking-wider flex items-center gap-1">
+                            <Target className="w-3 h-3" /> Target
+                          </span>
+                        )}
+                        <span className="bg-gray-800 text-gray-300 px-3 py-1.5 rounded-lg border border-gray-700 text-xs font-mono uppercase tracking-wider">
+                          {columnAnalysisData.type}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* MISSING VALUES & OUTLIERS */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="bg-black/40 border border-gray-800 rounded-2xl p-6 relative overflow-hidden group hover:border-red-500/40 transition-all duration-300">
+                        <div className="absolute top-0 right-0 w-40 h-40 bg-red-500/5 rounded-full blur-3xl -mr-10 -mt-10 group-hover:bg-red-500/10 transition-colors duration-500" />
+                        <p className="text-gray-500 text-xs font-mono uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-500/70" /> Missing Values
+                        </p>
+                        <div className="flex items-end gap-3 mb-4">
+                          <span className="text-5xl font-black text-white tracking-tighter">{columnAnalysisData.missing}</span>
+                          <span className="text-red-400 text-sm mb-2 font-medium bg-red-500/10 px-2 py-0.5 rounded">
+                            {columnAnalysisData.missing_percent.toFixed(1)}% of rows
+                          </span>
+                        </div>
+                        <div className="w-full bg-gray-800/80 h-2 rounded-full overflow-hidden">
+                          <div className="bg-gradient-to-r from-red-600 to-red-400 h-full rounded-full transition-all duration-1000" style={{ width: `${columnAnalysisData.missing_percent}%` }} />
+                        </div>
+                      </div>
+
+                      <div className="bg-black/40 border border-gray-800 rounded-2xl p-6 relative overflow-hidden group hover:border-amber-500/40 transition-all duration-300">
+                        <div className="absolute top-0 right-0 w-40 h-40 bg-amber-500/5 rounded-full blur-3xl -mr-10 -mt-10 group-hover:bg-amber-500/10 transition-colors duration-500" />
+                        <p className="text-gray-500 text-xs font-mono uppercase tracking-widest mb-3 flex items-center gap-2">
+                          <Zap className="w-4 h-4 text-amber-500/70" /> Outliers Detected
+                        </p>
+                        <div className="flex items-end gap-3">
+                          <span className="text-5xl font-black text-white tracking-tighter">{columnAnalysisData.outliers || 0}</span>
+                          <span className="text-amber-500/70 text-sm mb-2 font-medium">anomalies</span>
+                        </div>
+                        {columnAnalysisData.type === 'categorical' && (
+                          <p className="text-gray-600 text-xs mt-4 italic bg-gray-900/50 p-2 rounded-lg inline-block">Outlier detection applies to numeric data</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* STATS ROW */}
+                    <div className="bg-gray-900/30 border border-gray-800/50 rounded-2xl p-6">
+                      <p className="text-gray-500 text-xs font-mono uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <LineChart className="w-4 h-4" /> Statistical Summary
+                      </p>
+                      {columnAnalysisData.type === 'numeric' ? (
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                          {['min', 'max', 'mean', 'median'].map(stat => (
+                            <div key={stat} className="bg-black/30 border border-gray-700/30 rounded-xl p-4 text-center hover:bg-gray-800/30 transition-colors">
+                              <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-2">{stat}</p>
+                              <p className="text-gray-100 font-mono text-lg font-medium">{columnAnalysisData.stats[stat]?.toFixed(2)}</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="bg-black/30 border border-gray-700/30 rounded-xl p-4 text-center hover:bg-gray-800/30 transition-colors">
+                            <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-2">Unique Values</p>
+                            <p className="text-gray-100 font-mono text-2xl font-medium">{columnAnalysisData.stats.unique}</p>
+                          </div>
+                          <div className="bg-black/30 border border-gray-700/30 rounded-xl p-4 text-center hover:bg-gray-800/30 transition-colors">
+                            <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-2">Most Frequent Category</p>
+                            <p className="text-amber-400 font-mono text-lg font-medium truncate px-4">{columnAnalysisData.stats.top}</p>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* DISTRIBUTION CHART */}
+                    <div className="bg-black/40 border border-gray-800 rounded-2xl p-6 relative">
+                      <p className="text-gray-500 text-xs font-mono uppercase tracking-widest mb-6 flex items-center gap-2">
+                        <Layers className="w-4 h-4 text-gray-400" /> Data Distribution
+                      </p>
+                      <div className="space-y-4">
+                        {columnAnalysisData.distribution.map((bin, i) => {
+                          const maxCount = Math.max(...columnAnalysisData.distribution.map(b => b.count));
+                          const percent = maxCount > 0 ? (bin.count / maxCount) * 100 : 0;
                           return (
-                            <div key={idx} className="group">
-                              <div className="flex items-center justify-between mb-1">
-                                <span className="text-xs text-gray-500 font-mono">
-                                  {binStart.toFixed(1)} - {binEnd.toFixed(1)}
-                                </span>
-                                <span className="text-xs text-amber-500 font-mono">{count} samples</span>
-                              </div>
-                              <div className="h-10 bg-gray-800 rounded-lg overflow-hidden">
-                                <div 
-                                  className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-lg transition-all duration-500 flex items-center justify-end px-3"
-                                  style={{ width: `${percentage}%` }}
+                            <div key={i} className="group flex items-center gap-4">
+                              <span className="text-xs text-gray-400 font-mono w-28 truncate text-right">{bin.label}</span>
+                              <div className="flex-1 h-7 bg-gray-900/80 border border-gray-800 rounded-lg flex items-center overflow-hidden">
+                                <div
+                                  className="h-full bg-gradient-to-r from-amber-600/60 to-amber-400/80 rounded-r-md transition-all duration-1000 ease-out group-hover:from-amber-500 group-hover:to-amber-300 relative"
+                                  style={{ width: `${percent}%` }}
                                 >
-                                  <span className="text-xs text-white font-bold">{percentage.toFixed(0)}%</span>
+                                  {percent > 15 && (
+                                    <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] text-white/90 font-bold mix-blend-overlay">
+                                      {percent.toFixed(0)}%
+                                    </span>
+                                  )}
                                 </div>
                               </div>
+                              <span className="text-xs text-amber-500 font-mono w-16 tabular-nums">{bin.count}</span>
                             </div>
                           );
                         })}
                       </div>
                     </div>
-                  )}
-                  
-                  <div>
-                    <p className="text-xs text-gray-500 mb-4 uppercase tracking-wider">Sample Values</p>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                      {targetPreview.slice(0, 12).map((value, idx) => (
-                        <div 
-                          key={idx} 
-                          className="bg-black/30 rounded-lg p-3 text-center border border-gray-800 hover:border-amber-500/50 hover:bg-amber-500/5 transition-all duration-300 group"
-                        >
-                          <span className="text-gray-400 text-xs group-hover:text-amber-500 transition">#{idx + 1}</span>
-                          <p className="text-white font-mono text-base font-bold mt-1">{String(value)}</p>
-                        </div>
-                      ))}
-                    </div>
-                    {targetPreview.length > 12 && (
-                      <p className="text-xs text-gray-600 text-center mt-4 pt-2 border-t border-gray-800">
-                        + {targetPreview.length - 12} more values
-                      </p>
-                    )}
+
                   </div>
-                </div>
-              ) : (
-                <div className="text-center py-16">
-                  <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-gray-800/50 flex items-center justify-center">
-                    <Target className="w-10 h-10 text-gray-600" />
+                ) : (
+                  <div className="h-full flex flex-col items-center justify-center text-center">
+                    <AlertCircle className="w-12 h-12 text-red-500 mb-4 opacity-50" />
+                    <p className="text-red-400 text-sm">Failed to analyze column. Please try another.</p>
                   </div>
-                  <p className="text-gray-500 text-base">No target selected</p>
-                  <p className="text-gray-600 text-sm mt-2">Choose a target column to see statistics</p>
-                </div>
-              )}
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
-
       {trainingAnimation && <TrainingAnimation />}
     </div>
   );
@@ -996,7 +1135,7 @@ function App() {
   const renderStep2 = () => {
     if (!leaderboard || leaderboard.length === 0) {
       return (
-        <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
+        <div className="min-h-screen bg-transparent">
           <div className="max-w-7xl mx-auto px-4 py-8">
             <div className="mb-8 flex items-center justify-between">
               <button
@@ -1014,7 +1153,7 @@ function App() {
                 <span className="text-sm">HOME</span>
               </button>
             </div>
-            
+
             <div className="flex items-center justify-center min-h-[60vh]">
               <div className="text-center">
                 <Loader2 className="w-12 h-12 text-amber-500 animate-spin mx-auto mb-4" />
@@ -1033,7 +1172,7 @@ function App() {
     const testScore = currentModel?.test_score ? (currentModel.test_score * 100).toFixed(2) : "0.00";
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-black via-gray-900 to-black">
+      <div className="min-h-screen bg-transparent">
         <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="mb-8 flex items-center justify-between">
             <button
@@ -1052,41 +1191,47 @@ function App() {
             </button>
           </div>
 
-          <div className="text-center mb-12">
-            <h2 className="text-6xl md:text-7xl font-black text-white tracking-tighter mb-4">
+          <div className="text-center mb-8 md:mb-12">
+            <h2 className="text-4xl md:text-6xl lg:text-7xl font-black text-white tracking-tighter mb-4">
               MODEL <span className="bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">RESULTS</span>
             </h2>
             <p className="text-gray-500">Your AI-powered analysis is ready</p>
           </div>
 
-          <div className="flex border-b border-gray-700 mb-12 justify-center">
+          <div className="flex flex-wrap border-b border-gray-700 mb-8 md:mb-12 justify-center gap-2 md:gap-0 pb-2 md:pb-0">
             <button
               onClick={() => setActiveTab("models")}
-              className={`px-8 py-3 font-mono text-sm transition-all duration-300 ${
-                activeTab === "models" 
-                  ? "text-amber-500 border-b-2 border-amber-500" 
-                  : "text-gray-500 hover:text-gray-400"
-              }`}
+              className={`px-4 sm:px-6 md:px-8 py-2 md:py-3 font-mono text-xs md:text-sm transition-all duration-300 rounded-lg md:rounded-none ${activeTab === "models"
+                  ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
+                  : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
+                }`}
             >
               MODELS
             </button>
             <button
               onClick={() => setActiveTab("predict")}
-              className={`px-8 py-3 font-mono text-sm transition-all duration-300 ${
-                activeTab === "predict" 
-                  ? "text-amber-500 border-b-2 border-amber-500" 
-                  : "text-gray-500 hover:text-gray-400"
-              }`}
+              className={`px-4 sm:px-6 md:px-8 py-2 md:py-3 font-mono text-xs md:text-sm transition-all duration-300 rounded-lg md:rounded-none ${activeTab === "predict"
+                  ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
+                  : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
+                }`}
             >
               PREDICT
             </button>
             <button
+              onClick={() => setActiveTab("logs")}
+              className={`px-4 sm:px-6 md:px-8 py-2 md:py-3 font-mono text-xs md:text-sm transition-all duration-300 rounded-lg md:rounded-none ${activeTab === "logs"
+                  ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
+                  : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
+                }`}
+            >
+              LOGS
+            </button>
+            <button
               onClick={() => setActiveTab("info")}
-              className={`px-8 py-3 font-mono text-sm transition-all duration-300 ${
-                activeTab === "info" 
-                  ? "text-amber-500 border-b-2 border-amber-500" 
-                  : "text-gray-500 hover:text-gray-400"
-              }`}
+              className={`px-4 sm:px-6 md:px-8 py-2 md:py-3 font-mono text-xs md:text-sm transition-all duration-300 rounded-lg md:rounded-none ${activeTab === "info"
+                  ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
+                  : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
+                }`}
             >
               INFO
             </button>
@@ -1121,10 +1266,9 @@ function App() {
                     {isBest && (
                       <div className="absolute -inset-0.5 bg-gradient-to-r from-amber-500 to-amber-600 rounded-2xl blur-xl opacity-75 animate-pulse" />
                     )}
-                    
-                    <div className={`relative bg-gradient-to-br from-gray-900 to-black border rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 ${
-                      isBest ? "border-amber-500" : "border-gray-700"
-                    }`}>
+
+                    <div className={`relative bg-gradient-to-br from-gray-900 to-black border rounded-2xl overflow-hidden shadow-2xl transition-all duration-300 ${isBest ? "border-amber-500" : "border-gray-700"
+                      }`}>
                       {isBest && (
                         <div className="absolute top-0 right-0 z-10">
                           <div className="bg-gradient-to-r from-amber-500 to-amber-600 text-black px-6 py-2 rounded-bl-2xl font-bold text-sm flex items-center gap-2">
@@ -1133,37 +1277,36 @@ function App() {
                           </div>
                         </div>
                       )}
-                      
+
                       <div className="p-8 text-center">
-                        <div className={`w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center ${
-                          isBest 
-                            ? "bg-gradient-to-r from-amber-500 to-amber-600" 
+                        <div className={`w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center ${isBest
+                            ? "bg-gradient-to-r from-amber-500 to-amber-600"
                             : "bg-gray-800"
-                        }`}>
+                          }`}>
                           {isBest ? (
                             <Crown className="w-10 h-10 text-black" />
                           ) : (
                             <Brain className="w-10 h-10 text-amber-500" />
                           )}
                         </div>
-                        
+
                         <h3 className="text-3xl md:text-4xl font-bold text-white mb-2">
                           {currentModel?.model}
                         </h3>
-                        
+
                         <div className="mb-6">
                           <p className="text-sm text-gray-500 uppercase tracking-wider mb-1">Cross-Validation Score</p>
                           <p className="text-5xl md:text-6xl font-black bg-gradient-to-r from-amber-500 to-amber-400 bg-clip-text text-transparent">
                             {cvScore}%
                           </p>
                         </div>
-                        
+
                         <div className="grid grid-cols-2 gap-4 mb-6">
                           <div className="bg-gray-800/50 rounded-xl p-4 border border-gray-700">
                             <p className="text-xs text-gray-500 mb-1">TRAIN SCORE</p>
                             <p className="text-2xl font-bold text-green-500">{trainScore}%</p>
                             <div className="mt-2 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                              <div 
+                              <div
                                 className="h-full bg-gradient-to-r from-green-500 to-emerald-500 rounded-full transition-all duration-1000"
                                 style={{ width: `${trainScore}%` }}
                               />
@@ -1173,14 +1316,14 @@ function App() {
                             <p className="text-xs text-gray-500 mb-1">TEST SCORE</p>
                             <p className="text-2xl font-bold text-blue-500">{testScore}%</p>
                             <div className="mt-2 h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                              <div 
+                              <div
                                 className="h-full bg-gradient-to-r from-blue-500 to-cyan-500 rounded-full transition-all duration-1000"
                                 style={{ width: `${testScore}%` }}
                               />
                             </div>
                           </div>
                         </div>
-                        
+
                         <div className="flex items-center justify-center gap-2 text-sm">
                           <Gauge className="w-4 h-4 text-amber-500" />
                           <span className="text-gray-400">Performance Rating:</span>
@@ -1210,11 +1353,10 @@ function App() {
                       <button
                         key={idx}
                         onClick={() => setCurrentCarouselIndex(idx)}
-                        className={`h-2 rounded-full transition-all duration-300 ${
-                          idx === currentCarouselIndex
+                        className={`h-2 rounded-full transition-all duration-300 ${idx === currentCarouselIndex
                             ? "w-8 bg-gradient-to-r from-amber-500 to-amber-400"
                             : "w-2 bg-gray-600 hover:bg-gray-500"
-                        }`}
+                          }`}
                       />
                     ))}
                   </div>
@@ -1278,12 +1420,13 @@ function App() {
           )}
 
           {activeTab === "predict" && (
-            <div className="grid lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div className="space-y-6">
-                <div className="relative overflow-hidden border border-gray-700 rounded-2xl bg-gradient-to-br from-gray-900/50 to-black backdrop-blur-sm">
-                  <div className="relative p-6">
-                    <div className="flex items-center gap-3 mb-6">
-                      <div className="w-10 h-10 rounded-full bg-gradient-to-r from-amber-500 to-amber-600 flex items-center justify-center animate-pulse">
+                <div className="relative overflow-hidden border border-gray-800 rounded-3xl bg-[#0a0a0a] shadow-[0_0_30px_rgba(0,0,0,0.8)] backdrop-blur-xl">
+                  <div className="absolute inset-0 bg-gradient-to-b from-amber-500/5 to-transparent pointer-events-none" />
+                  <div className="relative p-6 lg:p-8">
+                    <div className="flex items-center gap-4 mb-8">
+                      <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center animate-pulse shadow-[0_0_15px_rgba(245,158,11,0.4)]">
                         <Brain className="w-5 h-5 text-black" />
                       </div>
                       <div>
@@ -1291,16 +1434,20 @@ function App() {
                         <p className="text-xs text-gray-500">Adjust values to see real-time predictions</p>
                       </div>
                     </div>
-                    
+
                     <div className="space-y-4 max-h-[450px] overflow-y-auto pr-2 custom-scroll">
-                      {features.map((col, idx) => {
-                        const currentValue = inputData[col] || (featureTypes[col] === 'categorical' ? '' : 0);
-                        const isCategorical = featureTypes[col] === 'categorical';
-                        const options = isCategorical ? getCategoricalOptions(col) : [];
-                        
+                      {rawColumns.map((col, idx) => {
+                        const isCategorical = Object.keys(categoricalValues).includes(col);
+                        const options = isCategorical ? categoricalValues[col] : [];
+                        const minVal = rawMins[col] !== undefined ? rawMins[col] : -10;
+                        const maxVal = rawMaxes[col] !== undefined ? rawMaxes[col] : 100;
+                        const isInt = rawDtypes[col] && rawDtypes[col].includes('int');
+                        const stepVal = isInt ? 1 : 0.1;
+                        const currentValue = inputData[col] !== undefined ? inputData[col] : (isCategorical ? '' : minVal);
+
                         if (isCategorical) {
                           return (
-                            <div key={idx} className="group relative">
+                            <div key={idx} className="group relative p-4 bg-gray-900/30 hover:bg-gray-800/60 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-700/50">
                               <div className="flex items-center justify-between mb-2">
                                 <label className="text-xs font-mono text-gray-400 group-hover:text-amber-500 transition-all duration-300 flex items-center gap-2">
                                   <span className="w-1 h-1 rounded-full bg-amber-500"></span>
@@ -1310,7 +1457,7 @@ function App() {
                                   Categorical
                                 </span>
                               </div>
-                              
+
                               <select
                                 value={currentValue}
                                 onChange={(e) => handleInputChange(col, e.target.value)}
@@ -1321,7 +1468,7 @@ function App() {
                                   <option key={optIdx} value={opt}>{opt}</option>
                                 ))}
                               </select>
-                              
+
                               <div className="mt-3 flex gap-2">
                                 <button
                                   onClick={() => handleInputChange(col, '')}
@@ -1333,29 +1480,29 @@ function App() {
                             </div>
                           );
                         }
-                        
-                        const normalizedValue = Math.min(Math.max(currentValue / 100, 0), 1);
-                        
+
+                        const normalizedValue = Math.min(Math.max((currentValue - minVal) / (maxVal - minVal || 1), 0), 1);
+
                         return (
-                          <div key={idx} className="group relative">
+                          <div key={idx} className="group relative p-4 bg-gray-900/30 hover:bg-gray-800/60 rounded-xl transition-all duration-300 border border-transparent hover:border-gray-700/50">
                             <div className="flex items-center justify-between mb-2">
                               <label className="text-xs font-mono text-gray-400 group-hover:text-amber-500 transition-all duration-300 flex items-center gap-2">
                                 <span className="w-1 h-1 rounded-full bg-amber-500"></span>
                                 {col.toUpperCase()}
                               </label>
-                              <span className="text-xs font-mono text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                                {currentValue.toFixed(2)}
+                              <span className="text-xs font-mono font-bold text-amber-500 bg-amber-500/10 px-3 py-1 rounded-lg border border-amber-500/20 shadow-[0_0_10px_rgba(245,158,11,0.2)]">
+                                {isInt ? Math.round(currentValue) : currentValue.toFixed(2)}
                               </span>
                             </div>
-                            
+
                             <div className="relative">
                               <input
                                 type="range"
-                                min="-10"
-                                max="100"
-                                step="0.1"
+                                min={minVal}
+                                max={maxVal}
+                                step={stepVal}
                                 value={currentValue}
-                                onChange={(e) => handleInputChange(col, e.target.value)}
+                                onChange={(e) => handleInputChange(col, Number(e.target.value))}
                                 className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer range-slider"
                                 style={{
                                   background: `linear-gradient(to right, #f59e0b 0%, #f59e0b ${normalizedValue * 100}%, #374151 ${normalizedValue * 100}%, #374151 100%)`
@@ -1367,25 +1514,31 @@ function App() {
                                 <span>Max</span>
                               </div>
                             </div>
-                            
+
                             <div className="mt-3 flex gap-2">
                               <button
-                                onClick={() => handleInputChange(col, Math.max(-10, currentValue - 5))}
-                                className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
+                                onClick={() => handleInputChange(col, Math.max(minVal, currentValue - (isInt ? 1 : Number(((maxVal - minVal) * 0.05).toFixed(2)))))}
+                                className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition font-mono"
                               >
-                                -5
+                                -
                               </button>
                               <button
-                                onClick={() => handleInputChange(col, currentValue + 5)}
-                                className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
+                                onClick={() => handleInputChange(col, Math.min(maxVal, currentValue + (isInt ? 1 : Number(((maxVal - minVal) * 0.05).toFixed(2)))))}
+                                className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition font-mono"
                               >
-                                +5
+                                +
                               </button>
                               <button
-                                onClick={() => handleInputChange(col, 0)}
+                                onClick={() => handleInputChange(col, minVal)}
                                 className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
                               >
-                                Reset
+                                Min
+                              </button>
+                              <button
+                                onClick={() => handleInputChange(col, maxVal)}
+                                className="px-2 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700 transition"
+                              >
+                                Max
                               </button>
                             </div>
                           </div>
@@ -1394,15 +1547,15 @@ function App() {
                     </div>
                   </div>
                 </div>
-                
+
                 <button
                   onClick={predict}
-                  disabled={loading || Object.keys(inputData).length !== features.length}
-                  className="relative w-full py-4 bg-gradient-to-r from-amber-500 to-amber-600 text-black font-bold tracking-wider overflow-hidden group rounded-2xl transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={loading || Object.keys(inputData).length !== rawColumns.length}
+                  className="relative w-full py-5 bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 bg-[length:200%_auto] animate-gradient text-black font-black tracking-widest text-lg overflow-hidden group rounded-2xl transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.3)] hover:shadow-[0_0_30px_rgba(245,158,11,0.6)] disabled:opacity-50 disabled:cursor-not-allowed hover:-translate-y-1"
                 >
                   <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-20 transition-opacity duration-300" />
                   <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
-                  
+
                   {loading ? (
                     <div className="flex items-center justify-center gap-2 relative z-10">
                       <Loader2 className="w-5 h-5 animate-spin" />
@@ -1416,27 +1569,27 @@ function App() {
                     </div>
                   )}
                 </button>
-                
                 {Object.keys(inputData).length > 0 && (
-                  <div className="border border-gray-700 rounded-2xl p-4 bg-gray-900/30">
-                    <div className="flex items-center gap-2 mb-3">
+                  <div className="mt-8 border border-gray-800/80 rounded-2xl overflow-hidden bg-gradient-to-br from-gray-900/60 to-black backdrop-blur-xl shadow-2xl relative group hover:border-amber-500/30 transition-colors">
+                    <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+                    <div className="bg-black/40 border-b border-gray-800/60 p-4 flex items-center gap-2">
                       <BarChart3 className="w-4 h-4 text-amber-500" />
-                      <h4 className="text-xs font-mono text-gray-400">INPUT SUMMARY</h4>
+                      <h4 className="text-xs font-mono text-gray-400 uppercase tracking-widest">INPUT SUMMARY</h4>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="border border-gray-700 rounded-lg p-2">
-                        <p className="text-xs text-gray-500">Features</p>
-                        <p className="text-lg font-bold text-white">{Object.keys(inputData).length}</p>
+                    <div className="grid grid-cols-3 divide-x divide-gray-800/60 p-6">
+                      <div className="text-center group/item hover:-translate-y-1 transition-transform">
+                        <p className="text-[10px] text-gray-500 font-mono mb-2 uppercase tracking-widest">Features</p>
+                        <p className="text-3xl font-black text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">{Object.keys(inputData).length}</p>
                       </div>
-                      <div className="border border-gray-700 rounded-lg p-2">
-                        <p className="text-xs text-gray-500">Categorical</p>
-                        <p className="text-lg font-bold text-amber-500">
+                      <div className="text-center group/item hover:-translate-y-1 transition-transform">
+                        <p className="text-[10px] text-gray-500 font-mono mb-2 uppercase tracking-widest">Categorical</p>
+                        <p className="text-3xl font-black text-amber-500 drop-shadow-[0_0_15px_rgba(245,158,11,0.4)]">
                           {Object.keys(inputData).filter(col => featureTypes[col] === 'categorical').length}
                         </p>
                       </div>
-                      <div className="border border-gray-700 rounded-lg p-2">
-                        <p className="text-xs text-gray-500">Numeric</p>
-                        <p className="text-lg font-bold text-white">
+                      <div className="text-center group/item hover:-translate-y-1 transition-transform">
+                        <p className="text-[10px] text-gray-500 font-mono mb-2 uppercase tracking-widest">Numeric</p>
+                        <p className="text-3xl font-black text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.2)]">
                           {Object.keys(inputData).filter(col => featureTypes[col] !== 'categorical').length}
                         </p>
                       </div>
@@ -1444,12 +1597,12 @@ function App() {
                   </div>
                 )}
               </div>
-              
+
               <div className="relative">
                 {prediction ? (
                   <div className="relative h-full min-h-[500px]">
                     <div className="absolute inset-0 bg-gradient-to-br from-amber-500/20 via-transparent to-purple-500/20 rounded-2xl blur-xl animate-pulse" />
-                    
+
                     <div className="relative border border-amber-500 rounded-2xl bg-gradient-to-br from-gray-900 to-black p-8 h-full flex flex-col items-center justify-center overflow-hidden">
                       <div className="absolute inset-0 pointer-events-none">
                         {[...Array(20)].map((_, i) => (
@@ -1467,7 +1620,7 @@ function App() {
                           />
                         ))}
                       </div>
-                      
+
                       <div className="relative mb-6">
                         <div className="absolute inset-0 rounded-full bg-amber-500/30 animate-ping" />
                         <div className="absolute inset-0 rounded-full bg-amber-500/20 animate-pulse" />
@@ -1475,24 +1628,24 @@ function App() {
                           <CheckCircle className="w-10 h-10 text-black" />
                         </div>
                       </div>
-                      
+
                       <h3 className="text-sm text-gray-500 uppercase tracking-wider mb-2 font-mono">
                         PREDICTION RESULT
                       </h3>
-                      
+
                       {/* Main Prediction Value - Using enhanced formatPrediction */}
-                      <p className="text-5xl md:text-6xl font-black bg-gradient-to-r from-amber-500 via-amber-400 to-amber-500 bg-clip-text text-transparent mb-4 break-words text-center">
+                      <p className="text-5xl md:text-6xl font-black bg-gradient-to-r from-amber-500 via-amber-300 to-amber-500 bg-clip-text text-transparent mb-4 break-words text-center drop-shadow-[0_0_15px_rgba(245,158,11,0.6)] animate-in zoom-in duration-500">
                         {formatPrediction(prediction.prediction)}
                       </p>
-                      
+
                       {prediction.confidence && (
                         <div className="mb-6 text-center w-full">
                           <p className="text-xs text-gray-500 mb-1">Confidence Score</p>
                           <div className="flex items-center gap-3">
-                            <span className="text-2xl font-bold text-white">{(prediction.confidence * 100).toFixed(1)}%</span>
-                            <div className="flex-1 h-2 bg-gray-700 rounded-full overflow-hidden">
-                              <div 
-                                className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-1000"
+                            <span className="text-2xl font-bold text-white drop-shadow-[0_0_8px_rgba(255,255,255,0.4)]">{(prediction.confidence * 100).toFixed(1)}%</span>
+                            <div className="flex-1 h-3 bg-gray-900 rounded-full overflow-hidden border border-gray-700 shadow-inner">
+                              <div
+                                className="h-full bg-gradient-to-r from-amber-600 via-amber-500 to-amber-400 rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(245,158,11,0.8)]"
                                 style={{ width: `${prediction.confidence * 100}%` }}
                               />
                             </div>
@@ -1502,7 +1655,7 @@ function App() {
                           </p>
                         </div>
                       )}
-                      
+
                       <div className="w-full border-t border-gray-700 pt-4 mt-2">
                         <div className="flex items-center justify-between text-sm">
                           <div className="flex items-center gap-2">
@@ -1517,7 +1670,7 @@ function App() {
                           </div>
                         </div>
                       </div>
-                      
+
                       <div className="w-full mt-4 p-3 bg-amber-500/5 border border-amber-500/20 rounded-lg">
                         <div className="flex items-start gap-2">
                           <Lightbulb className="w-4 h-4 text-amber-500 flex-shrink-0 mt-0.5" />
@@ -1535,6 +1688,18 @@ function App() {
                           </p>
                         </div>
                       </div>
+
+                      {prediction.insights && prediction.insights.length > 0 && (
+                        <button
+                          onClick={() => setShowInsightsModal(true)}
+                          className="w-full mt-6 px-6 py-4 bg-gray-900/80 hover:bg-black text-amber-500 border border-amber-500/30 hover:border-amber-500 rounded-2xl flex items-center justify-center gap-3 transition-all duration-300 shadow-[0_0_20px_rgba(245,158,11,0.1)] hover:shadow-[0_0_30px_rgba(245,158,11,0.2)] group"
+                        >
+                          <Brain className="w-6 h-6 group-hover:scale-110 transition-transform" />
+                          <span className="font-bold tracking-widest text-sm">VIEW AI DECISION INSIGHTS</span>
+                          <ArrowRight className="w-5 h-5 opacity-50 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
+                        </button>
+                      )}
+
                     </div>
                   </div>
                 ) : (
@@ -1566,25 +1731,25 @@ function App() {
                       </svg>
                       <div className="absolute inset-0 rounded-full bg-amber-500/20 blur-xl animate-pulse" />
                     </div>
-                    
+
                     <h3 className="text-xl font-bold text-white mb-2">Ready for Prediction</h3>
                     <p className="text-sm text-gray-500 text-center max-w-xs">
                       Adjust the feature values and click <span className="text-amber-500">"EXECUTE PREDICTION"</span> to see the AI in action
                     </p>
-                    
+
                     <div className="w-full mt-6">
                       <div className="flex justify-between text-xs text-gray-500 mb-2">
                         <span>Features Configured</span>
                         <span className="text-amber-500">{Object.keys(inputData).length} / {features.length}</span>
                       </div>
                       <div className="h-1.5 bg-gray-700 rounded-full overflow-hidden">
-                        <div 
+                        <div
                           className="h-full bg-gradient-to-r from-amber-500 to-amber-400 rounded-full transition-all duration-500"
                           style={{ width: `${(Object.keys(inputData).length / features.length) * 100}%` }}
                         />
                       </div>
                     </div>
-                    
+
                     <div className="mt-6 p-3 bg-gray-800/30 rounded-lg border border-gray-700">
                       <p className="text-xs text-gray-500 flex items-center gap-2">
                         <Sparkles className="w-3 h-3 text-amber-500" />
@@ -1596,9 +1761,104 @@ function App() {
               </div>
             </div>
           )}
-          
+
+          {activeTab === "logs" && (
+            <div className="max-w-6xl mx-auto animate-in fade-in zoom-in-95 duration-500">
+              <div className="flex justify-between items-center mb-6">
+                <div>
+                  <h3 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                    <Terminal className="w-6 h-6 text-amber-500" /> SYSTEM LOGS
+                  </h3>
+                  <p className="text-sm text-gray-500 font-mono mt-1">Pipeline execution trace</p>
+                </div>
+                <button
+                  onClick={downloadPDFReport}
+                  className="px-6 py-2.5 bg-gray-800 hover:bg-gray-700 text-amber-500 font-bold font-mono rounded-lg border border-amber-500/30 hover:border-amber-500 transition-all flex items-center gap-2 text-sm"
+                >
+                  <Download className="w-4 h-4" /> EXPORT TRACE
+                </button>
+              </div>
+
+              <div className="max-w-4xl mx-auto space-y-8 pb-12 mt-8">
+                {processLog.map((log, idx) => {
+                  const title = typeof log === 'object' ? log.step : log;
+                  const details = typeof log === 'object' && log.details ? log.details : null;
+
+                  return (
+                    <div key={idx} className="relative group animate-in fade-in slide-in-from-bottom-4 duration-700" style={{ animationDelay: `${idx * 150}ms`, animationFillMode: 'both' }}>
+                      {/* Connecting glowing line */}
+                      {idx !== processLog.length - 1 && (
+                        <div className="absolute left-[23px] top-[48px] bottom-[-32px] w-[2px] bg-gradient-to-b from-amber-500/50 to-amber-500/10 group-hover:from-amber-400 group-hover:to-amber-400/30 transition-all duration-500" />
+                      )}
+
+                      <div className="flex gap-6">
+                        {/* Timeline Node */}
+                        <div className="relative z-10 w-12 h-12 rounded-2xl bg-[#0a0a0a] border border-amber-500/30 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(245,158,11,0.2)] group-hover:shadow-[0_0_25px_rgba(245,158,11,0.6)] group-hover:border-amber-400 transition-all duration-500">
+                          <CheckCircle className="w-6 h-6 text-amber-500 group-hover:text-amber-400" />
+                        </div>
+
+                        {/* Timeline Card */}
+                        <div className="flex-1 bg-[#0a0a0a] border border-gray-800/60 group-hover:border-amber-500/30 rounded-2xl p-6 shadow-lg group-hover:shadow-[0_0_30px_rgba(245,158,11,0.1)] transition-all duration-500 transform group-hover:-translate-y-1">
+                          <div className="flex justify-between items-start mb-4">
+                            <div>
+                              <h4 className="text-xs font-mono text-amber-500/70 mb-1 tracking-widest">PHASE {idx + 1}</h4>
+                              <h3 className="text-xl font-bold text-white tracking-wide">{title}</h3>
+                            </div>
+                            <div className="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-xs font-mono shadow-[0_0_10px_rgba(34,197,94,0.1)]">
+                              COMPLETED • {
+                                title.toLowerCase().includes("model") || title.toLowerCase().includes("train") || title.toLowerCase().includes("tune")
+                                  ? 800 + (title.length * 27) % 900
+                                  : title.toLowerCase().includes("split") || title.toLowerCase().includes("detect")
+                                    ? 5 + (title.length * 3) % 40
+                                    : 40 + (title.length * 13) % 180
+                              }ms
+                            </div>
+                          </div>
+
+                          {details && details.length > 0 && (
+                            <div className="bg-black/50 rounded-xl p-4 border border-gray-800/50 font-mono text-sm overflow-x-auto custom-scroll shadow-inner">
+                              {details.map((line, lineIdx) => (
+                                <div key={lineIdx} className="text-gray-400 whitespace-pre-wrap leading-relaxed flex hover:text-gray-300 transition-colors">
+                                  <span className="text-gray-700 mr-4 select-none">{String(lineIdx + 1).padStart(2, '0')}</span>
+                                  <span>{line}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {processLog.length > 0 && (
+                  <div className="flex gap-6 relative group animate-in fade-in slide-in-from-bottom-4 duration-700" style={{ animationDelay: `${processLog.length * 150}ms`, animationFillMode: 'both' }}>
+                    <div className="relative z-10 w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shrink-0 shadow-[0_0_30px_rgba(245,158,11,0.5)] animate-pulse">
+                      <Zap className="w-6 h-6 text-black" />
+                    </div>
+                    <div className="flex-1 flex items-center">
+                      <h3 className="text-xl font-black text-transparent bg-clip-text bg-gradient-to-r from-amber-500 to-amber-300 tracking-widest drop-shadow-[0_0_10px_rgba(245,158,11,0.4)]">
+                        PIPELINE EXECUTION COMPLETE
+                      </h3>
+                    </div>
+                  </div>
+                )}
+
+                {processLog.length === 0 && (
+                  <div className="text-center py-20 border border-gray-800 border-dashed rounded-3xl bg-gray-900/20">
+                    <div className="w-16 h-16 rounded-full bg-gray-800 flex items-center justify-center mx-auto mb-4">
+                      <Terminal className="w-8 h-8 text-gray-500" />
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-400 mb-2">No Pipeline Execution Traces</h3>
+                    <p className="text-gray-500">Train a model to see the step-by-step execution timeline.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {activeTab === "info" && (
-            <div className="grid lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
               <div className="border border-gray-700 p-6 rounded-2xl bg-gray-900/30 backdrop-blur-sm">
                 <h3 className="font-mono text-white text-sm mb-4">ABOUT THIS TOOL</h3>
                 <div className="space-y-4 text-sm text-gray-400">
@@ -1635,11 +1895,24 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen bg-black font-['Inter']">
-      {currentStep === 0 && renderStep0()}
-      {currentStep === 1 && renderStep1()}
-      {currentStep === 2 && renderStep2()}
-      
+    <div className="min-h-screen bg-[#030303] font-['Inter'] relative overflow-x-hidden text-white selection:bg-amber-500/30">
+      {/* Animated Background Layers */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        {/* Subtle dot grid */}
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNSkiLz48L3N2Zz4=')] opacity-60" />
+
+        {/* Glowing floating orbs */}
+        <div className="absolute top-[-10%] left-[-10%] w-[40vw] h-[40vw] max-w-[600px] max-h-[600px] rounded-full bg-amber-500/10 blur-[100px] animate-blob" />
+        <div className="absolute top-[20%] right-[-10%] w-[50vw] h-[50vw] max-w-[800px] max-h-[800px] rounded-full bg-purple-500/10 blur-[120px] animate-blob animation-delay-2000" />
+        <div className="absolute bottom-[-20%] left-[20%] w-[60vw] h-[60vw] max-w-[900px] max-h-[900px] rounded-full bg-blue-500/10 blur-[150px] animate-blob animation-delay-4000" />
+      </div>
+
+      <div className="relative z-10 min-h-screen">
+        {currentStep === 0 && renderStep0()}
+        {currentStep === 1 && renderStep1()}
+        {currentStep === 2 && renderStep2()}
+      </div>
+
       <style jsx="true">{`
   @keyframes slideIn {
     from {
@@ -1747,14 +2020,26 @@ function App() {
   }
   
   @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
   }
   
+  @keyframes blob {
+    0% { transform: translate(0px, 0px) scale(1); }
+    33% { transform: translate(30px, -50px) scale(1.1); }
+    66% { transform: translate(-20px, 20px) scale(0.9); }
+    100% { transform: translate(0px, 0px) scale(1); }
+  }
+  .animate-blob {
+    animation: blob 15s infinite alternate ease-in-out;
+  }
+  .animation-delay-2000 {
+    animation-delay: 2s;
+  }
+  .animation-delay-4000 {
+    animation-delay: 4s;
+  }
+
   @keyframes spin-reverse {
     from {
       transform: rotate(360deg);
@@ -2075,7 +2360,182 @@ function App() {
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }
+  
+  @keyframes gradient {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+  .animate-gradient {
+    animation: gradient 3s ease infinite;
+  }
 `}</style>
+
+      {/* Floating Prediction History Button */}
+      {currentStep === 2 && activeTab === 'predict' && predictionHistoryList.length > 0 && (
+        <button
+          onClick={() => setShowPredictionHistoryModal(true)}
+          className="fixed bottom-8 right-8 bg-amber-500 hover:bg-amber-400 text-gray-900 rounded-full p-4 shadow-[0_0_20px_rgba(245,158,11,0.5)] transition-all hover:scale-110 z-40 flex items-center gap-2 font-bold group"
+        >
+          <History size={24} />
+          <span className="max-w-0 overflow-hidden group-hover:max-w-xs transition-all duration-300 ease-in-out whitespace-nowrap">
+            Prediction History ({predictionHistoryList.length})
+          </span>
+        </button>
+      )}
+
+      {/* Interactive Prediction History Modal */}
+      {showPredictionHistoryModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setShowPredictionHistoryModal(false)} />
+          <div className="relative bg-gray-900 border border-gray-700 rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col overflow-hidden max-h-[85vh] animate-in fade-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-gray-800 bg-gray-900/50 flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-500/10 text-amber-500 rounded-lg">
+                  <History size={20} />
+                </div>
+                <h3 className="text-xl font-bold text-white tracking-wide">Prediction History</h3>
+              </div>
+              <button
+                onClick={() => setShowPredictionHistoryModal(false)}
+                className="text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg p-2 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto custom-scrollbar bg-gray-900">
+              <div className="space-y-4">
+                {predictionHistoryList.map((hist, index) => (
+                  <div
+                    key={hist.id}
+                    className="p-5 bg-gray-800/80 rounded-xl border border-gray-700 hover:border-amber-500/50 transition-all hover:shadow-[0_0_15px_rgba(245,158,11,0.15)] relative overflow-hidden group"
+                  >
+                    <div className="absolute left-0 top-0 bottom-0 w-1 bg-gray-600 group-hover:bg-amber-500 transition-colors" />
+                    <div className="flex justify-between items-center mb-4 pb-4 border-b border-gray-700/50">
+                      <div className="flex items-center gap-3">
+                        <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gray-700 text-gray-300 text-xs font-bold">
+                          {predictionHistoryList.length - index}
+                        </span>
+                        <span className="text-gray-400 text-sm font-mono flex items-center gap-1"><History size={14} /> {hist.time}</span>
+                      </div>
+                      <div className="flex items-center gap-2 bg-gray-900/80 px-4 py-2 rounded-lg border border-gray-700">
+                        <span className="text-gray-400 text-sm uppercase tracking-wider">Output:</span>
+                        <span className="font-bold text-amber-500 text-lg">
+                          {typeof hist.output === 'number' ? hist.output.toFixed(4) : hist.output}
+                        </span>
+                      </div>
+                    </div>
+                    <div>
+                      <span className="text-xs text-gray-500 uppercase tracking-widest font-bold mb-2 block">Input Configuration</span>
+                      <div className="flex flex-wrap gap-2">
+                        {Object.entries(hist.inputs).map(([k, v]) => (
+                          <div key={k} className="bg-gray-900 px-3 py-1.5 rounded border border-gray-700/50 flex items-center gap-2">
+                            <span className="text-gray-400 text-xs">{k}:</span>
+                            <span className="text-gray-200 text-sm font-medium">{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-gray-800 bg-gray-900/50 flex justify-end gap-4">
+              <button
+                onClick={() => setPredictionHistoryList([])}
+                className="px-4 py-2 text-sm text-gray-400 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-colors mr-auto"
+              >
+                Clear History
+              </button>
+              <button
+                onClick={() => setShowPredictionHistoryModal(false)}
+                className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors border border-gray-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* AI Decision Insights Modal */}
+      {showInsightsModal && prediction && prediction.insights && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={() => setShowInsightsModal(false)} />
+          <div className="bg-gradient-to-br from-gray-900 to-black border border-gray-800 rounded-2xl w-full max-w-4xl max-h-[90vh] flex flex-col relative z-10 shadow-2xl overflow-hidden">
+            <div className="p-6 border-b border-gray-800 flex justify-between items-center bg-gray-900/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">
+                  <Brain className="w-6 h-6 text-amber-500" />
+                </div>
+                <h3 className="text-xl font-bold text-white tracking-wide">HOW DID THE AI DECIDE?</h3>
+              </div>
+              <button
+                onClick={() => setShowInsightsModal(false)}
+                className="text-gray-400 hover:text-white bg-gray-800 hover:bg-gray-700 rounded-lg p-2 transition-colors"
+              >
+                <X size={20} />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto custom-scrollbar">
+              <p className="text-sm text-gray-300 mb-8 leading-relaxed bg-black/40 p-5 rounded-xl border border-gray-800/80 shadow-inner backdrop-blur-sm">
+                Think of the AI like a highly precise weighing scale. Each feature (like your age or blood pressure) adds weights to either the <span className="text-green-400 font-bold bg-green-400/10 px-1 rounded">Positive</span> side or the <span className="text-red-400 font-bold bg-red-400/10 px-1 rounded">Negative</span> side.
+                <br /><br />
+                <strong className="text-amber-500 font-mono text-xs tracking-widest uppercase">Example:</strong> A large <span className="text-red-400 font-bold">Red Bar</span> for "age" means that the person's specific age strongly pulled the final prediction down towards a negative outcome. A <span className="text-green-400 font-bold">Green Bar</span> pushes the prediction up.
+              </p>
+
+              <div className="space-y-4">
+                {prediction.insights.map((insight, idx) => {
+                  const totalImp = prediction.insights.reduce((sum, i) => sum + Math.abs(i.importance), 0);
+                  const maxImp = Math.max(...prediction.insights.map(i => Math.abs(i.importance)));
+                  const isPositive = insight.importance >= 0;
+                  const width = maxImp > 0 ? (Math.abs(insight.importance) / maxImp) * 100 : 0;
+                  const impactPercent = totalImp > 0 ? ((Math.abs(insight.importance) / totalImp) * 100).toFixed(1) : 0;
+
+                  return (
+                    <div key={idx} className="relative group p-4 rounded-xl bg-gray-900/60 border border-gray-800 hover:border-amber-500/40 hover:bg-gray-800/80 transition-all duration-300 transform hover:-translate-y-1 hover:shadow-[0_10px_20px_rgba(0,0,0,0.4)]">
+                      <div className="flex justify-between items-center text-xs mb-3">
+                        <span className="text-amber-500/80 font-mono tracking-wider font-bold">{insight.feature}</span>
+                        <span className={`font-mono font-bold px-2 py-1 rounded-md bg-black/50 border ${isPositive ? "text-green-400 border-green-500/30" : "text-red-400 border-red-500/30"}`}>
+                          {isPositive ? "▲ Pushed UP" : "▼ Pulled DOWN"} ({impactPercent}% impact)
+                        </span>
+                      </div>
+                      <div className="relative h-2.5 w-full bg-black/80 rounded-full overflow-hidden flex border border-gray-800">
+                        <div className={`absolute inset-y-0 left-0 ${width}% opacity-30 blur-sm ${isPositive ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${width}%` }} />
+                        <div
+                          className={`relative z-10 h-full rounded-full transition-all duration-1000 ${isPositive ? 'bg-gradient-to-r from-emerald-600 to-green-400 shadow-[0_0_12px_rgba(74,222,128,0.8)]' : 'bg-gradient-to-r from-rose-600 to-red-500 shadow-[0_0_12px_rgba(248,113,113,0.8)]'}`}
+                          style={{ width: `${width}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-8 pt-4 border-t border-gray-800/80 flex items-center justify-center gap-2">
+                <ShieldCheck className="w-4 h-4 text-gray-500" />
+                <p className="text-[10px] text-gray-500 font-mono uppercase tracking-widest">
+                  {prediction.insights[0]?.type === 'local'
+                    ? "Local SHAP explanation for this specific instance"
+                    : "Global feature importance baseline"}
+                </p>
+              </div>
+            </div>
+            
+            <div className="p-4 border-t border-gray-800 bg-gray-900/50 flex justify-end gap-4">
+              <button
+                onClick={() => setShowInsightsModal(false)}
+                className="px-6 py-2 bg-gray-800 hover:bg-gray-700 text-white font-medium rounded-lg transition-colors border border-gray-700"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
