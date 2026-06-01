@@ -57,7 +57,7 @@ import {
   Terminal
 } from "lucide-react";
 
-const API_BASE_URL = "https://automi-backend-hw8s.onrender.com";
+const API_BASE_URL = "https://automl-backend-hw8s.onrender.com";
 
 function App() {
   const [currentStep, setCurrentStep] = useState(0);
@@ -672,8 +672,8 @@ function App() {
               <div
                 key={idx}
                 className={`h-2 rounded-full transition-all duration-500 ${idx <= trainingPhase
-                    ? `w-8 bg-gradient-to-r ${phase.color}`
-                    : 'w-2 bg-white/20'
+                  ? `w-8 bg-gradient-to-r ${phase.color}`
+                  : 'w-2 bg-white/20'
                   }`}
               />
             ))}
@@ -712,8 +712,8 @@ function App() {
             <div
               {...getRootProps()}
               className={`relative border-2 border-dashed transition-all duration-500 cursor-pointer p-12 text-center overflow-hidden group ${isDragActive
-                  ? 'border-amber-500 bg-amber-500/10 shadow-[0_0_30px_rgba(245,158,11,0.3)]'
-                  : 'border-gray-700 hover:border-amber-500/50 hover:bg-gray-900/50'
+                ? 'border-amber-500 bg-amber-500/10 shadow-[0_0_30px_rgba(245,158,11,0.3)]'
+                : 'border-gray-700 hover:border-amber-500/50 hover:bg-gray-900/50'
                 }`}
             >
               <input {...getInputProps()} />
@@ -974,8 +974,8 @@ function App() {
                     key={i}
                     onClick={() => analyzeColumn(col)}
                     className={`w-full text-left px-4 py-3 rounded-lg font-mono text-sm transition-all flex justify-between items-center ${selectedAnalysisColumn === col
-                        ? 'bg-amber-500/10 border border-amber-500/50 text-amber-500'
-                        : 'bg-gray-800/30 border border-gray-800 text-gray-400 hover:bg-gray-800/80 hover:border-gray-600 hover:text-gray-200'
+                      ? 'bg-amber-500/10 border border-amber-500/50 text-amber-500'
+                      : 'bg-gray-800/30 border border-gray-800 text-gray-400 hover:bg-gray-800/80 hover:border-gray-600 hover:text-gray-200'
                       }`}
                   >
                     <span className="truncate">{col}</span>
@@ -1202,8 +1202,8 @@ function App() {
             <button
               onClick={() => setActiveTab("models")}
               className={`px-4 sm:px-6 md:px-8 py-2 md:py-3 font-mono text-xs md:text-sm transition-all duration-300 rounded-lg md:rounded-none ${activeTab === "models"
-                  ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
-                  : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
+                ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
+                : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
                 }`}
             >
               MODELS
@@ -1211,8 +1211,8 @@ function App() {
             <button
               onClick={() => setActiveTab("predict")}
               className={`px-4 sm:px-6 md:px-8 py-2 md:py-3 font-mono text-xs md:text-sm transition-all duration-300 rounded-lg md:rounded-none ${activeTab === "predict"
-                  ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
-                  : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
+                ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
+                : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
                 }`}
             >
               PREDICT
@@ -1220,8 +1220,8 @@ function App() {
             <button
               onClick={() => setActiveTab("logs")}
               className={`px-4 sm:px-6 md:px-8 py-2 md:py-3 font-mono text-xs md:text-sm transition-all duration-300 rounded-lg md:rounded-none ${activeTab === "logs"
-                  ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
-                  : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
+                ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
+                : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
                 }`}
             >
               LOGS
@@ -1229,8 +1229,8 @@ function App() {
             <button
               onClick={() => setActiveTab("info")}
               className={`px-4 sm:px-6 md:px-8 py-2 md:py-3 font-mono text-xs md:text-sm transition-all duration-300 rounded-lg md:rounded-none ${activeTab === "info"
-                  ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
-                  : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
+                ? "text-amber-500 bg-amber-500/10 md:bg-transparent md:border-b-2 border-amber-500"
+                : "text-gray-400 hover:text-gray-300 hover:bg-gray-800/50 md:hover:bg-transparent"
                 }`}
             >
               INFO
@@ -1280,8 +1280,8 @@ function App() {
 
                       <div className="p-8 text-center">
                         <div className={`w-20 h-20 mx-auto mb-6 rounded-full flex items-center justify-center ${isBest
-                            ? "bg-gradient-to-r from-amber-500 to-amber-600"
-                            : "bg-gray-800"
+                          ? "bg-gradient-to-r from-amber-500 to-amber-600"
+                          : "bg-gray-800"
                           }`}>
                           {isBest ? (
                             <Crown className="w-10 h-10 text-black" />
@@ -1354,8 +1354,8 @@ function App() {
                         key={idx}
                         onClick={() => setCurrentCarouselIndex(idx)}
                         className={`h-2 rounded-full transition-all duration-300 ${idx === currentCarouselIndex
-                            ? "w-8 bg-gradient-to-r from-amber-500 to-amber-400"
-                            : "w-2 bg-gray-600 hover:bg-gray-500"
+                          ? "w-8 bg-gradient-to-r from-amber-500 to-amber-400"
+                          : "w-2 bg-gray-600 hover:bg-gray-500"
                           }`}
                       />
                     ))}
@@ -2479,7 +2479,7 @@ function App() {
                 <X size={20} />
               </button>
             </div>
-            
+
             <div className="p-6 overflow-y-auto custom-scrollbar">
               <p className="text-sm text-gray-300 mb-8 leading-relaxed bg-black/40 p-5 rounded-xl border border-gray-800/80 shadow-inner backdrop-blur-sm">
                 Think of the AI like a highly precise weighing scale. Each feature (like your age or blood pressure) adds weights to either the <span className="text-green-400 font-bold bg-green-400/10 px-1 rounded">Positive</span> side or the <span className="text-red-400 font-bold bg-red-400/10 px-1 rounded">Negative</span> side.
@@ -2524,7 +2524,7 @@ function App() {
                 </p>
               </div>
             </div>
-            
+
             <div className="p-4 border-t border-gray-800 bg-gray-900/50 flex justify-end gap-4">
               <button
                 onClick={() => setShowInsightsModal(false)}
