@@ -89,18 +89,18 @@ graph TD
         S3[("Amazon S3")]
     end
 
-    UI -->|Upload CSV, Train, Predict| APIClient
-    APIClient -->|REST API (HTTPS)| Router
+    UI -- "Upload CSV, Train, Predict" --> APIClient
+    APIClient -- "REST API (HTTPS)" --> Router
     
     %% Backend internal flow
-    Router -->|Uploads/Downloads Data| S3
-    Router -->|Triggers Training| AutoML
-    AutoML -->|Saves Trained Models| S3
+    Router -- "Uploads/Downloads Data" --> S3
+    Router -- "Triggers Training" --> AutoML
+    AutoML -- "Saves Trained Models" --> S3
     
     %% Prediction flow
-    Router -->|Requests Prediction| XAI
-    XAI -->|Loads Model| S3
-    XAI -->|Generates Local/Global Insights| Router
+    Router -- "Requests Prediction" --> XAI
+    XAI -- "Loads Model" --> S3
+    XAI -- "Generates Local/Global Insights" --> Router
 ```
 
 ### Architecture Components
