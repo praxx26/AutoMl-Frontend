@@ -2482,9 +2482,9 @@ function App() {
 
             <div className="p-6 overflow-y-auto custom-scrollbar">
               <p className="text-sm text-gray-300 mb-8 leading-relaxed bg-black/40 p-5 rounded-xl border border-gray-800/80 shadow-inner backdrop-blur-sm">
-                Think of the AI like a highly precise weighing scale. Each feature (like your age or blood pressure) adds weights to either the <span className="text-green-400 font-bold bg-green-400/10 px-1 rounded">Positive</span> side or the <span className="text-red-400 font-bold bg-red-400/10 px-1 rounded">Negative</span> side.
+                To predict <strong className="text-amber-500 text-base">{formatPrediction(prediction.prediction)}</strong>, the AI analyzes each feature's specific contribution. The features below acted as weights, pushing the prediction towards or away from this outcome.
                 <br /><br />
-                <strong className="text-amber-500 font-mono text-xs tracking-widest uppercase">Example:</strong> A large <span className="text-red-400 font-bold">Red Bar</span> for "age" means that the person's specific age strongly pulled the final prediction down towards a negative outcome. A <span className="text-green-400 font-bold">Green Bar</span> pushes the prediction up.
+                <strong className="text-amber-500 font-mono text-xs tracking-widest uppercase">Insight:</strong> The feature <strong className="text-white">"{prediction.insights.length > 0 ? prediction.insights[0].feature : 'feature'}"</strong> had the most significant impact. A <span className="text-green-400 font-bold bg-green-400/10 px-1 rounded">Green Bar</span> indicates the feature contributed positively to predicting <strong className="text-white">{formatPrediction(prediction.prediction)}</strong>, while a <span className="text-red-400 font-bold bg-red-400/10 px-1 rounded">Red Bar</span> indicates it pulled the prediction away.
               </p>
 
               <div className="space-y-4">
@@ -2500,7 +2500,7 @@ function App() {
                       <div className="flex justify-between items-center text-xs mb-3">
                         <span className="text-amber-500/80 font-mono tracking-wider font-bold">{insight.feature}</span>
                         <span className={`font-mono font-bold px-2 py-1 rounded-md bg-black/50 border ${isPositive ? "text-green-400 border-green-500/30" : "text-red-400 border-red-500/30"}`}>
-                          {isPositive ? "▲ Pushed UP" : "▼ Pulled DOWN"} ({impactPercent}% impact)
+                          {isPositive ? "▲ Supported prediction" : "▼ Opposed prediction"} ({impactPercent}% impact)
                         </span>
                       </div>
                       <div className="relative h-2.5 w-full bg-black/80 rounded-full overflow-hidden flex border border-gray-800">
