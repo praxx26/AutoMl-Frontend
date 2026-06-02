@@ -2497,11 +2497,21 @@ function App() {
 
                   return (
                     <div key={idx} className="relative group p-4 rounded-xl bg-gray-900/60 border border-gray-800 hover:border-amber-500/40 hover:bg-gray-800/80 transition-all duration-300 transform hover:-translate-y-1 hover:shadow-[0_10px_20px_rgba(0,0,0,0.4)]">
-                      <div className="flex justify-between items-center text-xs mb-3">
-                        <span className="text-amber-500/80 font-mono tracking-wider font-bold">{insight.feature}</span>
-                        <span className={`font-mono font-bold px-2 py-1 rounded-md bg-black/50 border ${isPositive ? "text-green-400 border-green-500/30" : "text-red-400 border-red-500/30"}`}>
-                          {isPositive ? "▲ Supported prediction" : "▼ Opposed prediction"} ({impactPercent}% impact)
-                        </span>
+                      <div className="flex flex-col gap-2 mb-3">
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-amber-500/80 font-mono tracking-wider font-bold">{insight.feature}</span>
+                          <span className={`font-mono font-bold px-2 py-1 rounded-md bg-black/50 border ${isPositive ? "text-green-400 border-green-500/30" : "text-red-400 border-red-500/30"}`}>
+                            {isPositive ? "▲ Supported prediction" : "▼ Opposed prediction"} ({impactPercent}% impact)
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          The input value of <strong className="text-gray-200">{inputData[insight.feature] !== undefined ? inputData[insight.feature] : "this feature"}</strong> {
+                            rawMins[insight.feature] !== undefined && rawMaxes[insight.feature] !== undefined 
+                              ? `(range: ${rawMins[insight.feature]} to ${rawMaxes[insight.feature]}) ` 
+                              : ""
+                          } 
+                          {isPositive ? "pushed the model towards" : "pulled the model away from"} predicting <strong className="text-amber-500">{formatPrediction(prediction.prediction)}</strong>.
+                        </div>
                       </div>
                       <div className="relative h-2.5 w-full bg-black/80 rounded-full overflow-hidden flex border border-gray-800">
                         <div className={`absolute inset-y-0 left-0 ${width}% opacity-30 blur-sm ${isPositive ? 'bg-green-500' : 'bg-red-500'}`} style={{ width: `${width}%` }} />
